@@ -7,7 +7,7 @@ from enum import IntEnum
 import inspect
 import json
 import logging
-from typing import Callable, Iterable, Protocol, overload
+from typing import Callable, Protocol, overload
 from urllib.parse import urlparse
 import aiohttp
 
@@ -18,7 +18,6 @@ from reolinkapi.exceptions import (
 )
 from reolinkapi.typings.commands import CommandRequest, CommandResponse
 
-from . import encrypt
 from reolinkapi.helpers import security as securityHelpers
 
 from reolinkapi.parts.connection import Connection as BaseConnection
@@ -117,7 +116,7 @@ class Connection(BaseConnection):
         if port == 443 or (port is None and encryption == Encryption.HTTPS):
             https = True
             port = None
-        elif port == 80 and encrypt != Encryption.HTTPS:
+        elif port == 80 and encryption != Encryption.HTTPS:
             https = False
             port = None
         else:
@@ -132,7 +131,6 @@ class Connection(BaseConnection):
         port: int | None,
         timeout: float,
         https: bool,
-        can_encrypt: bool,
         full_reset: bool = True,
     ):
         scheme = "https" if https is True else "http"
@@ -150,8 +148,6 @@ class Connection(BaseConnection):
         self.__base_url = url
         self.__connection_id = _id
         self.__hostname = hostname
-        if (https or not can_encrypt) and isinstance(self, encrypt.Encrypt):
-            self._can_encrypt = False  # pylint: disable=attribute-defined-outside-init
         self.__session = self._create_session(timeout)
 
     async def disconnect(self):
@@ -200,14 +196,6 @@ class Connection(BaseConnection):
             if self._auth_token != "":
                 url += f"?token={self._auth_token}"
         count = None
-        if isinstance(self, encrypt.Encrypt) and self._can_encrypt:
-            (count, enc) = self._query_data_by_count(
-                *(f"{_k}={_v}" for _k, _v in query.items())
-            )
-            if enc:
-                count.free = False
-                url += f"&encrypt={enc}"
-                query.clear()
 
         headers = {"Accept": "*/*", "Content-Type": "application/json"}
 
@@ -226,18 +214,13 @@ class Connection(BaseConnection):
                 )
             else:
                 data = self.__session.json_serialize(args)
-                if self._can_encrypt:
-                    edata = self._encrypt(data)
-                    encrypted = data != edata
-                else:
-                    edata = data
 
                 _LOGGER_DATA.debug(
                     "%s%s<-%s", self.__hostname, "(E)" if encrypted else "", data
                 )
                 context = self.__session.post(
                     url,
-                    data=edata,
+                    data=data,
                     headers=headers,
                     allow_redirects=False,
                 )
@@ -334,12 +317,6 @@ class Connection(BaseConnection):
         try:
             data = await response.text()
             decrypted = False
-            if isinstance(self, encrypt.Encrypt):
-                if self._can_encrypt and data[0] != "[":
-                    ddata = self._decrypt(data)
-                    decrypted = data != ddata
-                    if decrypted:
-                        data = ddata
 
             if data[0] != "[":
                 _LOGGER.error("did not get json as response: (%s)", data)

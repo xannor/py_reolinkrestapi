@@ -2,7 +2,7 @@
 
 import logging
 import os
-from reolinkrestapi.parts.security import Security
+from reolinkapi.parts.security import Security
 from reolinkapi.helpers.security import LOGIN_COMMAND, LOGOUT_COMMAND
 
 

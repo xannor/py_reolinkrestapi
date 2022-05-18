@@ -7,15 +7,13 @@ from reolinkapi.parts.video import Video
 from reolinkapi.parts.encoding import Encoding
 from reolinkapi.parts.alarm import Alarm
 from reolinkapi.parts.ai import AI
+from reolinkapi.parts.security import Security
 from .parts.connection import Connection, SessionFactory
-from .parts.security import Security
-from .parts.encrypt import Encrypt
 from .parts.record import Record
 
 class Client(
     Connection,
     Security,
-    Encrypt,
     System,
     Network,
     Video,
