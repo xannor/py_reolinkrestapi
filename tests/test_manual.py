@@ -4,7 +4,7 @@ import logging
 import os
 from reolinkapi.const import DEFAULT_PASSWORD, DEFAULT_USERNAME
 
-from reolinkapi.rest import Client
+from reolinkrestapi import Client
 
 
 async def test_manual(caplog):

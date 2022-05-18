@@ -1,8 +1,8 @@
 """Record Rest Helpers"""
 
 
-from ...helpers.record import SNAPSHOT_COMMAND
-from ...typings.commands import (
+from reolinkapi.helpers.record import SNAPSHOT_COMMAND
+from reolinkapi.typings.commands import (
     CommandChannelParameter,
     CommandRequestTypes,
     CommandRequestWithParam,

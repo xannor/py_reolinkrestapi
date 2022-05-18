@@ -2,11 +2,11 @@
 
 import logging
 import os
-from reolinkapi.rest.security import Security
+from reolinkrestapi.parts.security import Security
 from reolinkapi.helpers.security import LOGIN_COMMAND, LOGOUT_COMMAND
 
 
-from reolinkapi.rest import Client
+from reolinkrestapi import Client
 from .common import MockConnection
 
 _JSON = {

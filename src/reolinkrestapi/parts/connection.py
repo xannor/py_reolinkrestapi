@@ -11,20 +11,20 @@ from typing import Callable, Iterable, Protocol, overload
 from urllib.parse import urlparse
 import aiohttp
 
-from ..helpers.commands import isparam
+from reolinkapi.helpers.commands import isparam
 
-from ..exceptions import (
+from reolinkapi.exceptions import (
     InvalidResponseError,
 )
-from ..typings.commands import CommandRequest, CommandResponse
+from reolinkapi.typings.commands import CommandRequest, CommandResponse
 
 from . import encrypt
-from ..helpers import security as securityHelpers
+from reolinkapi.helpers import security as securityHelpers
 
-from ..base.connection import Connection as BaseConnection
-from ..base.security import Security as BaseSecurity
+from reolinkapi.parts.connection import Connection as BaseConnection
+from reolinkapi.parts.security import Security as BaseSecurity
 
-from ..const import DEFAULT_TIMEOUT
+from reolinkapi.const import DEFAULT_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")

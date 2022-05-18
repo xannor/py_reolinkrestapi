@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from reolinkapi.rest import Client
-from reolinkapi.rest.connection import Encryption
+from reolinkrestapi import Client
+from reolinkrestapi.parts.connection import Encryption
 
-from reolinkapi.rest.encrypt import Encrypt
+from reolinkrestapi.parts.encrypt import Encrypt
 from reolinkapi.typings.commands import CommandRequestWithParam
 from reolinkapi.helpers.security import LOGIN_COMMAND
 from reolinkapi.const import DEFAULT_USERNAME, DEFAULT_PASSWORD

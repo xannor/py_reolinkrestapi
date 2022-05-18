@@ -2,13 +2,13 @@
 
 import logging
 import os
-from reolinkapi.base.system import System
+from reolinkapi.parts.system import System
 from reolinkapi.helpers.system import (
     GET_ABILITY_COMMAND,
     DEVICE_INFO_COMMAND,
 )
 
-from reolinkapi.rest import Client
+from reolinkrestapi import Client
 from .common import MockConnection
 
 _JSON = {

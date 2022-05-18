@@ -1,16 +1,16 @@
 """ Security Commands """
 from __future__ import annotations
 
-from ..exceptions import InvalidCredentialsError
+from reolinkapi.exceptions import InvalidCredentialsError
 
 from reolinkapi.typings.commands import CommandResponse
 
 from . import encrypt
 
-from ..const import DEFAULT_PASSWORD, DEFAULT_USERNAME
+from reolinkapi.const import DEFAULT_PASSWORD, DEFAULT_USERNAME
 
-from ..base.security import Security as BaseSecurity
-from ..helpers import security as securityHelpers
+from reolinkapi.parts.security import Security as BaseSecurity
+from reolinkapi.helpers import security as securityHelpers
 
 from . import connection
 

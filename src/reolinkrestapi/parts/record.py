@@ -3,9 +3,9 @@
 import random
 import string
 
-from .helpers import record as recordHelpers
+from ..helpers import record as recordHelpers
 
-from ..base.record import Record as BaseRecord
+from reolinkapi.parts.record import Record as BaseRecord
 from . import connection
 
 _rnd = random.SystemRandom()

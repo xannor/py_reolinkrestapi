@@ -11,19 +11,19 @@ from cryptography.hazmat.primitives.ciphers import Cipher, BlockCipherAlgorithm
 from cryptography.hazmat.primitives.ciphers.algorithms import AES
 from cryptography.hazmat.primitives.ciphers.modes import CFB
 
-from ..typings.commands import (
+from reolinkapi.typings.commands import (
     CommandRequestWithParam,
     CommandRequestTypes,
 )
-from ..typings.security import LoginTokenV2
+from reolinkapi.typings.security import LoginTokenV2
 
 from . import connection
-from ..helpers import security as securityHelpers
+from reolinkapi.helpers import security as securityHelpers
 
-from ..typings.encrypt import DigestInfo
+from reolinkapi.typings.encrypt import DigestInfo
 
-from ..base.connection import Connection as BaseConnection
-from ..base.security import Security as BaseSecurity
+from reolinkapi.parts.connection import Connection as BaseConnection
+from reolinkapi.parts.security import Security as BaseSecurity
 
 
 def _istokenv2(token: securityHelpers.LoginToken) -> TypeGuard[LoginTokenV2]:

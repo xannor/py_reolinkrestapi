@@ -2,7 +2,7 @@
 
 import logging
 import os
-from reolinkapi.base.led import LED
+from reolinkapi.parts.led import LED
 from reolinkapi.helpers.led import (
     GET_IR_LIGHTS_COMMAND,
     SET_IR_LIGHTS_COMMAND,
@@ -12,7 +12,7 @@ from reolinkapi.helpers.led import (
     SET_WHITE_LED_COMMAND,
 )
 
-from reolinkapi.rest import Client
+from reolinkrestapi import Client
 from .common import MockConnection
 
 _JSON = {
