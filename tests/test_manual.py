@@ -2,17 +2,20 @@
 
 import logging
 import os
+from pytest import mark
 from reolinkapi.const import DEFAULT_PASSWORD, DEFAULT_USERNAME
 
 from reolinkrestapi import Client
 
 
+@mark.skip("Manual run only")
 async def test_manual(caplog):
     """manual code test"""
 
     caplog.set_level(logging.DEBUG)
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_manual_live(caplog):
     """manual code test (live)"""
 

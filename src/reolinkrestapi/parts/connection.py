@@ -49,7 +49,6 @@ class Encryption(IntEnum):
 
     NONE = 0
     HTTPS = 1
-    AES = 2
 
 
 PROCESS_RESPONSES_CALLBACK_TYPE = Callable[[list[CommandResponse]], None]
@@ -122,7 +121,7 @@ class Connection(BaseConnection):
         else:
             https = encryption == Encryption.HTTPS
         await self._setup_connection(
-            hostname, port, timeout, https, encryption == Encryption.AES
+            hostname, port, timeout, https, False
         )
 
     async def _setup_connection(

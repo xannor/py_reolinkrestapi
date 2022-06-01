@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pytest import mark
 from reolinkapi.parts.led import LED
 from reolinkapi.helpers.led import (
     GET_IR_LIGHTS_COMMAND,
@@ -56,6 +57,7 @@ async def test_get_irlights():
     assert await client.get_ir_lights() is not None
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_get_irlights(caplog):
     """get ir lights live test"""
 

@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pytest import mark
 from reolinkapi.parts.security import Security
 from reolinkapi.helpers.security import LOGIN_COMMAND, LOGOUT_COMMAND
 
@@ -34,6 +35,7 @@ async def test_login():
     assert await client.login()
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_fail_login(caplog):
     """login live test (admin-empty = expect failure)"""
 
@@ -43,6 +45,7 @@ async def test_live_fail_login(caplog):
     assert not await client.login()
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_login(caplog):
     """login live test"""
 

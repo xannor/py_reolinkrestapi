@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pytest import mark
 from reolinkapi.parts.network import Network
 from reolinkapi.helpers.network import (
     GET_CHANNEL_STATUS_COMMAND,
@@ -46,6 +47,7 @@ async def test_locallink():
     assert await client.get_local_link() is not None
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_localink(caplog):
     """local link live test"""
 
@@ -68,6 +70,7 @@ async def test_channelstatus():
     assert info is not None
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_channelstatus(caplog):
     """channel status live test"""
 
@@ -90,6 +93,7 @@ async def test_ports():
     assert info is not None
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_ports(caplog):
     """get ports live test"""
 
@@ -111,6 +115,7 @@ async def test_p2p():
     assert await client.get_p2p() is not None
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_p2p(caplog):
     """local p2p test"""
 

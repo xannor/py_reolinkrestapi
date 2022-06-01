@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pytest import mark
 from reolinkapi.parts.system import System
 from reolinkapi.helpers.system import (
     GET_ABILITY_COMMAND,
@@ -36,6 +37,7 @@ async def test_ability():
     assert await client.get_ability() is not None
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_ability(caplog):
     """login live test"""
 
@@ -58,6 +60,7 @@ async def test_devinfo():
     assert info is not None
 
 
+@mark.skip("Manual run only, requires live device")
 async def test_live_devinfo(caplog):
     """device info live test"""
 
