@@ -1,15 +1,15 @@
 """ ReoLink REST API """
 
-from reolinkapi.parts.led import LED
-from reolinkapi.parts.network import Network
-from reolinkapi.parts.system import System
-from reolinkapi.parts.video import Video
-from reolinkapi.parts.encoding import Encoding
-from reolinkapi.parts.alarm import Alarm
-from reolinkapi.parts.ai import AI
-from reolinkapi.parts.security import Security
-from .parts.connection import Connection, SessionFactory
-from .parts.record import Record
+from reolinkapi.led import LED
+from reolinkapi.network import Network
+from reolinkapi.system import System
+from reolinkapi.video import Video
+from reolinkapi.encoding import Encoding
+from reolinkapi.alarm import Alarm
+from reolinkapi.ai import AI
+from reolinkapi.security import Security
+from .connection import Connection, SessionFactory
+from .record import Record
 
 class Client(
     Connection,
@@ -27,3 +27,5 @@ class Client(
 
     def __init__(self, session_factory: SessionFactory = None) -> None:
         super().__init__(session_factory=session_factory)
+
+__all__ = ["Client"]

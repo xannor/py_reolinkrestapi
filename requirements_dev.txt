@@ -1,0 +1,3 @@
+git+https://github.com/xannor/py_reolinkapi.git#main
+aiohttp
+pytest-asyncio

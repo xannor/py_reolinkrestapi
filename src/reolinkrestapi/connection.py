@@ -1,27 +1,21 @@
-""" REST Connection """
+"""REST Connection"""
 from __future__ import annotations
-
-
 import asyncio
+from dataclasses import asdict
+
 from enum import IntEnum
 import inspect
-import json
+from json import JSONDecoder, loads as DEFAULT_JSON_DECODER
 import logging
 from typing import Callable, Protocol, overload
 from urllib.parse import urlparse
 import aiohttp
 
-from reolinkapi.helpers.commands import isparam
+from reolinkapi.commands import CommandResponse, CommandRequest, CommandRequestWithParam
+from reolinkapi.connection import Connection as BaseConnection
+from reolinkapi.security import Security as BaseSecurity, LoginRequest
 
-from reolinkapi.exceptions import (
-    InvalidResponseError,
-)
-from reolinkapi.typings.commands import CommandRequest, CommandResponse
-
-from reolinkapi.helpers import security as securityHelpers
-
-from reolinkapi.parts.connection import Connection as BaseConnection
-from reolinkapi.parts.security import Security as BaseSecurity
+from reolinkapi import errors
 
 from reolinkapi.const import DEFAULT_TIMEOUT
 
@@ -50,14 +44,12 @@ class Encryption(IntEnum):
     NONE = 0
     HTTPS = 1
 
-
-PROCESS_RESPONSES_CALLBACK_TYPE = Callable[[list[CommandResponse]], None]
-
+PROCESS_RESPONSES_CALLBACK_TYPE = Callable[[list[CommandResponse]], None] #pylint: disable=invalid-name
 
 class Connection(BaseConnection):
     """REST Connection"""
 
-    def __init__(self, *args, session_factory: SessionFactory = None, **kwargs):
+    def __init__(self, *args, session_factory: SessionFactory = None, loads: JSONDecoder = DEFAULT_JSON_DECODER, **kwargs):
         self._process_responses_callbacks: list[PROCESS_RESPONSES_CALLBACK_TYPE] = [
         ]
         super().__init__(*args, **kwargs)
@@ -68,6 +60,7 @@ class Connection(BaseConnection):
         self.__base_url = ""
         self.__hostname = ""
         self.__connection_id = 0
+        self.__loads = loads
 
     def _create_session(self, timeout: int):
         return self.__session_factory(self.__base_url, timeout)
@@ -185,12 +178,12 @@ class Connection(BaseConnection):
 
         if len(args) == 0:
             return None
-        query = {"cmd": args[0]["cmd"]}
-        if use_get and isparam(args[0]):
-            query.update(args[0]["param"])
+        query = {"cmd": args[0].cmd}
+        if use_get and isinstance(args[0], CommandRequestWithParam):
+            query.update(asdict(args[0].param))
         url = "/cgi-bin/api.cgi"
-        if args[0]["cmd"] == securityHelpers.LOGIN_COMMAND:
-            url += f'?cmd={args[0]["cmd"]}'
+        if args[0].cmd == LoginRequest.COMMAND:
+            url += f'?cmd={args[0].cmd}'
         elif isinstance(self, BaseSecurity):
             if self._auth_token != "":
                 url += f"?token={self._auth_token}"
@@ -212,7 +205,7 @@ class Connection(BaseConnection):
                     allow_redirects=False,
                 )
             else:
-                data = self.__session.json_serialize(args)
+                data = self.__session.json_serialize(map(asdict, args))
 
                 _LOGGER_DATA.debug(
                     "%s%s<-%s", self.__hostname, "(E)" if encrypted else "", data
@@ -296,10 +289,15 @@ class Connection(BaseConnection):
             return response
         except aiohttp.ClientConnectorError as http_error:
             _LOGGER.error("connection error (%s)", http_error)
-            raise
-        except asyncio.TimeoutError:
+            raise errors.ReolinkConnectionError() from http_error
+        except asyncio.TimeoutError as timeout_error:
             _LOGGER.error("timeout")
-            raise
+            raise errors.ReolinkTimeoutError() from timeout_error
+        except aiohttp.ClientResponseError as response_error:
+            raise errors.ReolinkResponseError() from response_error
+        except Exception as unhandled_error:
+            _LOGGER.error("unhandled exception")
+            raise errors.ReolinkUnhandledError() from unhandled_error
         finally:
             if cleanup:
                 if response is not None:
@@ -319,10 +317,10 @@ class Connection(BaseConnection):
 
             if data[0] != "[":
                 _LOGGER.error("did not get json as response: (%s)", data)
-                raise InvalidResponseError()
+                raise errors.ReolinkResponseError()
 
             # handle json over text/html (missing accept?)
-            data = json.loads(data)
+            data = self.__loads(data)
 
         finally:
             response.close()
