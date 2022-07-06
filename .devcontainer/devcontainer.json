@@ -10,6 +10,9 @@
 	"postCreateCommand": "./.devcontainer/postCreateCommand.sh",
 	"containerEnv": {
 	},
+	"mounts": [
+		"source=${localWorkspaceFolder}/../base,target=${containerWorkspaceFolder}/../base,type=bind,consistency=cached"
+	],
     "settings": {
 		"python.defaultInterpreterPath": "/usr/local/bin/python",
 		"python.linting.enabled": true,

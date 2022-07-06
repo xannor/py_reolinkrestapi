@@ -7,9 +7,9 @@ from reolinkapi.video import Video
 from reolinkapi.encoding import Encoding
 from reolinkapi.alarm import Alarm
 from reolinkapi.ai import AI
-from reolinkapi.security import Security
 from .connection import Connection, SessionFactory
 from .record import Record
+from .security import Security
 
 class Client(
     Connection,
