@@ -3,9 +3,9 @@
 from __future__ import annotations
 from typing import Sequence
 
-from reolinkapi.commands import CommandRequest
+from async_reolink.api.commands import CommandRequest
 
-from reolinkapi.security import Security as BaseSecurity, LoginCommand
+from async_reolink.api.security import Security as BaseSecurity, LoginCommand
 from . import connection
 
 

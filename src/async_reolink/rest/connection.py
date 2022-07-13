@@ -18,15 +18,15 @@ from typing import (
 from urllib.parse import urlparse
 import aiohttp
 
-from reolinkapi.commands import (
+from async_reolink.api.commands import (
     CommandResponseType,
     CommandRequest,
 )
-from reolinkapi.connection import Connection as BaseConnection
+from async_reolink.api.connection import Connection as BaseConnection
 
-from reolinkapi import errors
+from async_reolink.api import errors
 
-from reolinkapi.const import DEFAULT_TIMEOUT
+from async_reolink.api.const import DEFAULT_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
@@ -67,6 +67,7 @@ class Connection(BaseConnection):
         self._force_get_callbacks: list[
             Callable[[str, dict[str, str], Sequence[CommandRequest]], any]
         ] = []
+        self._response_callback: list[Callable[[CommandResponseType], None]]
         super().__init__(*args, **kwargs)
         self.__session: aiohttp.ClientSession | None = None
         self.__session_factory: SessionFactory = (
@@ -227,7 +228,8 @@ class Connection(BaseConnection):
                         allow_redirects=False,
                     )
                 else:
-                    data = self.__session.json_serialize(list(map(asdict, args)))
+                    data = self.__session.json_serialize(
+                        list(map(asdict, args)))
 
                     _LOGGER_DATA.debug(
                         "%s%s<-%s", self.__hostname, "(E)" if encrypted else "", data
@@ -289,7 +291,8 @@ class Connection(BaseConnection):
                     )
 
                 if response.status >= 500:
-                    _LOGGER.error("got critical (%d) response code", response.status)
+                    _LOGGER.error(
+                        "got critical (%d) response code", response.status)
                     raise aiohttp.ClientResponseError(
                         response.request_info,
                         [response],
@@ -297,7 +300,8 @@ class Connection(BaseConnection):
                         headers=response.headers,
                     )
                 if response.status >= 400:
-                    _LOGGER.error("got auth (%d) response code", response.status)
+                    _LOGGER.error("got auth (%d) response code",
+                                  response.status)
                     raise aiohttp.ClientResponseError(
                         response.request_info,
                         [response],

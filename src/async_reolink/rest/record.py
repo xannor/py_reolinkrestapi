@@ -2,11 +2,11 @@
 
 from typing import Sequence
 from dataclasses import asdict
-from reolinkapi.commands import (
+from async_reolink.api.commands import (
     CommandRequest,
     COMMAND,
 )
-from reolinkapi.record import Record as BaseRecord, SnapshotCommand
+from async_reolink.api.record import Record as BaseRecord, SnapshotCommand
 from .seed import Seed
 
 from . import connection
