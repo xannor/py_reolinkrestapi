@@ -1,6 +1,5 @@
 """REST Connection"""
 from __future__ import annotations
-import asyncio
 from dataclasses import asdict
 
 from enum import IntEnum
@@ -27,6 +26,8 @@ from async_reolink.api.connection import Connection as BaseConnection
 from async_reolink.api import errors
 
 from async_reolink.api.const import DEFAULT_TIMEOUT
+
+from .errors import CONNECTION_ERRORS, RESPONSE_ERRORS
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
@@ -228,8 +229,7 @@ class Connection(BaseConnection):
                         allow_redirects=False,
                     )
                 else:
-                    data = self.__session.json_serialize(
-                        list(map(asdict, args)))
+                    data = self.__session.json_serialize(list(map(asdict, args)))
 
                     _LOGGER_DATA.debug(
                         "%s%s<-%s", self.__hostname, "(E)" if encrypted else "", data
@@ -291,8 +291,7 @@ class Connection(BaseConnection):
                     )
 
                 if response.status >= 500:
-                    _LOGGER.error(
-                        "got critical (%d) response code", response.status)
+                    _LOGGER.error("got critical (%d) response code", response.status)
                     raise aiohttp.ClientResponseError(
                         response.request_info,
                         [response],
@@ -300,8 +299,7 @@ class Connection(BaseConnection):
                         headers=response.headers,
                     )
                 if response.status >= 400:
-                    _LOGGER.error("got auth (%d) response code",
-                                  response.status)
+                    _LOGGER.error("got auth (%d) response code", response.status)
                     raise aiohttp.ClientResponseError(
                         response.request_info,
                         [response],
@@ -310,14 +308,10 @@ class Connection(BaseConnection):
                     )
 
                 cleanup = False
-            except aiohttp.ClientConnectorError as http_error:
-                _LOGGER.error("connection error (%s)", http_error)
-                raise errors.ReolinkConnectionError() from http_error
-            except asyncio.TimeoutError as timeout_error:
-                _LOGGER.error("timeout")
-                raise errors.ReolinkTimeoutError() from timeout_error
-            except aiohttp.ClientResponseError as response_error:
-                raise errors.ReolinkResponseError() from response_error
+            except CONNECTION_ERRORS:
+                raise
+            except RESPONSE_ERRORS:
+                raise
             except Exception as unhandled_error:
                 _LOGGER.error("unhandled exception")
                 raise errors.ReolinkUnhandledError() from unhandled_error
@@ -341,7 +335,10 @@ class Connection(BaseConnection):
 
                 if responses[0] != "[":
                     _LOGGER.error("did not get json as response: (%s)", data)
-                    raise errors.ReolinkResponseError()
+                    raise errors.ReolinkResponseError(
+                        code=errors.ErrorCodes.PROTOCOL_ERROR,
+                        details="invalid response",
+                    )
 
                 responses = self.__loads(responses)
             else:
