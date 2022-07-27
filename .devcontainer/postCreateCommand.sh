@@ -8,4 +8,4 @@ if [ -f "../base/pyproject.toml" ]; then
 else
     python -m pip --disable-pip-version-check --no-cache-dir install git+https://github.com/xannor/py_reolinkapi.git#main    
 fi
-python -m pip --disable-pip-version-check --no-cache-dir install -r requirements_dev.txt
+python -m pip --disable-pip-version-check --no-cache-dir install -e .

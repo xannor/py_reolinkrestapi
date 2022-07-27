@@ -221,7 +221,7 @@ class Connection(BaseConnection):
             try:
                 encrypted = False
                 if use_get:
-                    _LOGGER.debug("GET: %s<-%s", url, query)
+                    _LOGGER_DATA.debug("GET: %s<-%s", url, query)
                     context = self.__session.get(
                         url,
                         params=query,
@@ -229,7 +229,8 @@ class Connection(BaseConnection):
                         allow_redirects=False,
                     )
                 else:
-                    data = self.__session.json_serialize(list(map(asdict, args)))
+                    data = self.__session.json_serialize(
+                        list(map(asdict, args)))
 
                     _LOGGER_DATA.debug(
                         "%s%s<-%s", self.__hostname, "(E)" if encrypted else "", data
@@ -291,7 +292,8 @@ class Connection(BaseConnection):
                     )
 
                 if response.status >= 500:
-                    _LOGGER.error("got critical (%d) response code", response.status)
+                    _LOGGER.error(
+                        "got critical (%d) response code", response.status)
                     raise aiohttp.ClientResponseError(
                         response.request_info,
                         [response],
@@ -299,7 +301,8 @@ class Connection(BaseConnection):
                         headers=response.headers,
                     )
                 if response.status >= 400:
-                    _LOGGER.error("got auth (%d) response code", response.status)
+                    _LOGGER.error("got auth (%d) response code",
+                                  response.status)
                     raise aiohttp.ClientResponseError(
                         response.request_info,
                         [response],
@@ -354,6 +357,9 @@ class Connection(BaseConnection):
                     responses = cast(CommandResponseType, responses)
                 yield responses
                 return
+
+            _LOGGER_DATA.debug("%s%s->%s", self.__hostname,
+                               "(D)" if encrypted else "", responses)
 
             for response in responses:
                 if TYPE_CHECKING:

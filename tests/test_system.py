@@ -3,28 +3,25 @@
 import logging
 import os
 from pytest import mark
-from reolinkapi.parts.system import System
-from reolinkapi.helpers.system import (
-    GET_ABILITY_COMMAND,
-    DEVICE_INFO_COMMAND,
-)
+from async_reolink.api import system
 
-from reolinkrestapi import Client
+from async_reolink import rest
+
 from .common import MockConnection
 
 _JSON = {
-    GET_ABILITY_COMMAND: (
+    system.GetAbilitiesCommand.COMMAND: (
         '[{"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": "null"}}}]',
         '[{"cmd": "GetAbility", "code": 0, "value":{"Ability":{}}}]',
     ),
-    DEVICE_INFO_COMMAND: (
+    system.GetDeviceInfoCommand.COMMAND: (
         '[{"cmd": "GetDevInfo", "action": 0}]',
         '[{"cmd": "GetDevInfo", "code": 0, "value": {"DevInfo":{}}}]',
     ),
 }
 
 
-class SystemTestRig(MockConnection, System):
+class SystemTestRig(MockConnection, system.System):
     """System test rig"""
 
     JSON = _JSON

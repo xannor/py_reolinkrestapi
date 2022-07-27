@@ -3,7 +3,7 @@
 import json
 from typing import Generic, TypeVar
 
-from reolinkapi.commands import CommandRequestWithParam, CommandResponseType
+from async_reolink.api.commands import CommandRequest, CommandResponseType
 
 
 _T = TypeVar("_T", bound=dict[str, tuple[str, str]])
@@ -22,8 +22,8 @@ class MockConnection(Generic[_T]):
         """mocked ensure connect"""
         return True
 
-    async def _execute(
-        self, *args: CommandRequestWithParam, use_get: bool = False
+    async def _execute2(
+        self, *args: CommandRequest
     ) -> list[CommandResponseType]:
         """mocked _execue"""
         _J = type(self).JSON

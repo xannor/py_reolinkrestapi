@@ -7,6 +7,7 @@ from async_reolink.api.video import Video
 from async_reolink.api.encoding import Encoding
 from async_reolink.api.alarm import Alarm
 from async_reolink.api.ai import AI
+from async_reolink.api.ptz import PTZ
 from .connection import Connection, SessionFactory
 from .record import Record
 from .security import Security
@@ -25,6 +26,7 @@ class Client(
     Alarm,
     AI,
     LED,
+    PTZ,
 ):
     """Rest API Client"""
 
