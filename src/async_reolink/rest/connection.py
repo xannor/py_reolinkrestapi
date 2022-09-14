@@ -18,14 +18,16 @@ from urllib.parse import urlparse
 import aiohttp
 
 from async_reolink.api.commands import (
-    CommandResponseType,
-    CommandRequest,
+    CommandResponse as BaseCommandResponse,
+    CommandRequest as BaseCommandRequest,
 )
 from async_reolink.api.connection import Connection as BaseConnection
 
 from async_reolink.api import errors
 
 from async_reolink.api.const import DEFAULT_TIMEOUT
+
+from .commands import CommandResponse, CommandRequest
 
 from .errors import CONNECTION_ERRORS, RESPONSE_ERRORS
 
@@ -68,7 +70,7 @@ class Connection(BaseConnection):
         self._force_get_callbacks: list[
             Callable[[str, dict[str, str], Sequence[CommandRequest]], any]
         ] = []
-        self._response_callback: list[Callable[[CommandResponseType], None]]
+        # self._response_callback: list[Callable[[CommandResponse], None]]
         super().__init__(*args, **kwargs)
         self.__session: aiohttp.ClientSession | None = None
         self.__session_factory: SessionFactory = (
@@ -173,197 +175,203 @@ class Connection(BaseConnection):
         self.__hostname = ""
         self.__session = None
 
-    def _execute(self, *args: CommandRequest):
-        """Internal API"""
+    def __process_response(self, value: any):
+        if not CommandResponse.is_response(value):
+            raise errors.ReolinkResponseError("Invalid response from device")
+        response = CommandResponse.create_from(value)
+        # for handler in self._response_callback:
+        #    handler(response)
+        return response
 
-        async def _generator():
-            if not self.is_connected:
-                return
+    async def __execute(self, *args: CommandRequest):
+        if not self.is_connected:
+            return
 
-            if len(args) == 0:
-                return
-            use_get = False
-            query = {}
-            url = "/cgi-bin/api.cgi"
-            for callback in self._force_get_callbacks:
-                if inspect.iscoroutinefunction(callback):
-                    cb_result = await callback(url, query, args)
-                else:
-                    cb_result = callback(url, query, args)
+        if len(args) == 0:
+            return
+        use_get = False
+        query = {}
+        url = "/cgi-bin/api.cgi"
+        for callback in self._force_get_callbacks:
+            if inspect.iscoroutinefunction(callback):
+                cb_result = await callback(url, query, args)
+            else:
+                cb_result = callback(url, query, args)
 
-                if cb_result:
-                    if isinstance(cb_result, tuple) and len(cb_result) == 2:
-                        if not use_get:
-                            use_get = bool(cb_result[0])
-                        url = str(cb_result[1])
-                    elif isinstance(cb_result, str):
-                        url = cb_result
-                    elif not use_get:
-                        use_get = True
+            if cb_result:
+                if isinstance(cb_result, tuple) and len(cb_result) == 2:
+                    if not use_get:
+                        use_get = bool(cb_result[0])
+                    url = str(cb_result[1])
+                elif isinstance(cb_result, str):
+                    url = cb_result
+                elif not use_get:
+                    use_get = True
 
-            count = None
+        count = None
 
-            headers = {"Accept": "*/*", "Content-Type": "application/json"}
+        headers = {"Accept": "*/*", "Content-Type": "application/json"}
 
-            cleanup = True
+        cleanup = True
+        response = None
+        context = None
+
+        def _cleanup():
+            nonlocal response, context
+            if response:
+                response.close()
             response = None
+            if context:
+                context.close()
             context = None
 
-            def _cleanup():
-                nonlocal response, context
-                if response:
-                    response.close()
-                response = None
-                if context:
-                    context.close()
-                context = None
-
-            try:
-                encrypted = False
-                if use_get:
-                    _LOGGER_DATA.debug("GET: %s<-%s", url, query)
-                    context = self.__session.get(
-                        url,
-                        params=query,
-                        headers=headers,
-                        allow_redirects=False,
-                    )
-                else:
-                    data = self.__session.json_serialize(
-                        list(map(asdict, args)))
-
-                    _LOGGER_DATA.debug(
-                        "%s%s<-%s", self.__hostname, "(E)" if encrypted else "", data
-                    )
-                    context = self.__session.post(
-                        url,
-                        data=data,
-                        headers=headers,
-                        allow_redirects=False,
-                    )
-
-                response = await context
-                if count is not None:
-                    count.free = True
-                if response.status in (302, 301) and "location" in response.headers:
-                    location = response.headers["location"]
-                    redir = urlparse(location)
-                    base = urlparse(self.__base_url)
-                    if (
-                        base.scheme != redir.scheme
-                        and base.scheme == "http"
-                        or redir.scheme == "http"
-                    ):
-                        if redir.scheme == "http":
-                            _LOGGER.warning(
-                                "Got http redirect from camera (%s), please verify configuration",
-                                self.__base_url,
-                            )
-                            await self.connect(
-                                redir.hostname,
-                                redir.port,
-                                self.__session.timeout.total,
-                                encryption=Encryption.NONE,
-                            )
-                        else:
-                            _LOGGER.warning(
-                                "Got https redirect from camera (%s), please verify configuration",
-                                self.__base_url,
-                            )
-                            await self.connect(
-                                redir.hostname,
-                                redir.port,
-                                self.__session.timeout.total,
-                                encryption=Encryption.HTTPS,
-                            )
-                        async for response in _generator():
-                            yield response
-                        return
-
-                    _LOGGER.error(
-                        "got unexpected redirect from camera (%s), please verify configurtation",
-                        self.__base_url,
-                    )
-                    raise aiohttp.ClientResponseError(
-                        response.request_info,
-                        [response],
-                        status=response.status,
-                        headers=response.headers,
-                    )
-
-                if response.status >= 500:
-                    _LOGGER.error(
-                        "got critical (%d) response code", response.status)
-                    raise aiohttp.ClientResponseError(
-                        response.request_info,
-                        [response],
-                        status=response.status,
-                        headers=response.headers,
-                    )
-                if response.status >= 400:
-                    _LOGGER.error("got auth (%d) response code",
-                                  response.status)
-                    raise aiohttp.ClientResponseError(
-                        response.request_info,
-                        [response],
-                        status=response.status,
-                        headers=response.headers,
-                    )
-
-                cleanup = False
-            except CONNECTION_ERRORS:
-                raise
-            except RESPONSE_ERRORS:
-                raise
-            except Exception as unhandled_error:
-                _LOGGER.error("unhandled exception")
-                raise errors.ReolinkUnhandledError() from unhandled_error
-            finally:
-                if cleanup:
-                    _cleanup()
-
-            if not response:
-                return
-
-            if "json" in response.content_type:
-                try:
-                    responses = await response.json()
-                finally:
-                    _cleanup()
-            elif "text" in response.content_type:
-                try:
-                    responses = await response.text()
-                finally:
-                    _cleanup()
-
-                if responses[0] != "[":
-                    _LOGGER.error("did not get json as response: (%s)", data)
-                    raise errors.ReolinkResponseError(
-                        code=errors.ErrorCodes.PROTOCOL_ERROR,
-                        details="invalid response",
-                    )
-
-                responses = self.__loads(responses)
+        try:
+            encrypted = False
+            if use_get:
+                _LOGGER_DATA.debug("GET: %s<-%s", url, query)
+                context = self.__session.get(
+                    url,
+                    params=query,
+                    headers=headers,
+                    allow_redirects=False,
+                )
             else:
-                try:
-                    async for chunk in response.content.iter_any():
-                        yield chunk
-                finally:
-                    _cleanup()
-                return
+                data = self.__session.json_serialize(
+                    list(map(lambda r: r._get_request(), args))
+                )
 
-            if not isinstance(responses, list):
-                if TYPE_CHECKING:
-                    responses = cast(CommandResponseType, responses)
-                yield responses
-                return
+                _LOGGER_DATA.debug(
+                    "%s%s<-%s", self.__hostname, "(E)" if encrypted else "", data
+                )
+                context = self.__session.post(
+                    url,
+                    data=data,
+                    headers=headers,
+                    allow_redirects=False,
+                )
 
-            _LOGGER_DATA.debug("%s%s->%s", self.__hostname,
-                               "(D)" if encrypted else "", responses)
+            response = await context
+            if count is not None:
+                count.free = True
+            if response.status in (302, 301) and "location" in response.headers:
+                location = response.headers["location"]
+                redir = urlparse(location)
+                base = urlparse(self.__base_url)
+                if (
+                    base.scheme != redir.scheme
+                    and base.scheme == "http"
+                    or redir.scheme == "http"
+                ):
+                    if redir.scheme == "http":
+                        _LOGGER.warning(
+                            "Got http redirect from camera (%s), please verify configuration",
+                            self.__base_url,
+                        )
+                        await self.connect(
+                            redir.hostname,
+                            redir.port,
+                            self.__session.timeout.total,
+                            encryption=Encryption.NONE,
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "Got https redirect from camera (%s), please verify configuration",
+                            self.__base_url,
+                        )
+                        await self.connect(
+                            redir.hostname,
+                            redir.port,
+                            self.__session.timeout.total,
+                            encryption=Encryption.HTTPS,
+                        )
+                    async for response in self.__execute(*args):
+                        if TYPE_CHECKING:
+                            response = cast(bytes | BaseCommandResponse, response)
+                        yield response
+                    return
 
-            for response in responses:
-                if TYPE_CHECKING:
-                    response = cast(CommandResponseType, response)
-                yield response
+                _LOGGER.error(
+                    "got unexpected redirect from camera (%s), please verify configurtation",
+                    self.__base_url,
+                )
+                raise aiohttp.ClientResponseError(
+                    response.request_info,
+                    [response],
+                    status=response.status,
+                    headers=response.headers,
+                )
 
-        return _generator()
+            if response.status >= 500:
+                _LOGGER.error("got critical (%d) response code", response.status)
+                raise aiohttp.ClientResponseError(
+                    response.request_info,
+                    [response],
+                    status=response.status,
+                    headers=response.headers,
+                )
+            if response.status >= 400:
+                _LOGGER.error("got auth (%d) response code", response.status)
+                raise aiohttp.ClientResponseError(
+                    response.request_info,
+                    [response],
+                    status=response.status,
+                    headers=response.headers,
+                )
+
+            cleanup = False
+        except CONNECTION_ERRORS:
+            raise
+        except RESPONSE_ERRORS:
+            raise
+        except Exception as unhandled_error:
+            _LOGGER.error("unhandled exception")
+            raise errors.ReolinkUnhandledError() from unhandled_error
+        finally:
+            if cleanup:
+                _cleanup()
+
+        if not response:
+            return
+
+        if "json" in response.content_type:
+            try:
+                responses = await response.json()
+            finally:
+                _cleanup()
+        elif "text" in response.content_type:
+            try:
+                responses = await response.text()
+            finally:
+                _cleanup()
+
+            if responses[0] != "[":
+                _LOGGER.error("did not get json as response: (%s)", data)
+                raise errors.ReolinkResponseError(
+                    code=errors.ErrorCodes.PROTOCOL_ERROR,
+                    details="invalid response",
+                )
+
+            responses = self.__loads(responses)
+        else:
+            try:
+                async for chunk in response.content.iter_any():
+                    yield chunk
+            finally:
+                _cleanup()
+            return
+
+        if not isinstance(responses, list):
+            yield self.__process_response(responses)
+            return
+
+        _LOGGER_DATA.debug(
+            "%s%s->%s", self.__hostname, "(D)" if encrypted else "", responses
+        )
+
+        for response in responses:
+            yield self.__process_response(response)
+
+    def _execute(self, *args: BaseCommandRequest):
+        """Internal API"""
+
+        return self.__execute(*args)
