@@ -43,9 +43,7 @@ class GetLocalLinkResponse(
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetLocalLinkResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetLocalLinkRequest.COMMAND)
 
     def _local_link(self) -> dict:
@@ -57,7 +55,8 @@ class GetLocalLinkResponse(
 
     @property
     def local_link(self):
-        return models.LinkInfo(self._local_link)
+        # we are not passing the factory here since this object is meant to be detachable
+        return models.LinkInfo(self._local_link())
 
 
 class GetChannelStatusRequest(CommandRequest, network.GetChannelStatusRequest):
@@ -75,57 +74,6 @@ class GetChannelStatusRequest(CommandRequest, network.GetChannelStatusRequest):
         self.response_type = response_type
 
 
-class _ChannelStatuses(Mapping[int, models.ChannelStatus]):
-    __slots__ = ("__value",)
-
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        super().__init__()
-        self.__value = factory
-
-    def _factory(self):
-        if callable(self.__value):
-            return self.__value()
-        return self.__value
-
-    def _get_channels(self) -> list:
-        return (
-            value.get("status", None)
-            if (value := self._factory()) is not None
-            else None
-        )
-
-    def _channel_getter(self, channel_id: int):
-        # TODO : verify that channel_id == index
-
-        def _factory() -> dict:
-            return (
-                channels[channel_id]
-                if (channels := self._get_channels()) is not None
-                else None
-            )
-
-        return _factory
-
-    def __getitem__(self, __k: int):
-        return models.ChannelStatus(self._channel_getter(__k))
-
-    def __iter__(self):
-        if (channels := self._get_channels()) is None:
-            return
-        for _d in channels:
-            if TYPE_CHECKING:
-                _d = cast(dict, _d)
-            if (channel := _d.get("channel", None)) is not None:
-                if TYPE_CHECKING:
-                    channel = cast(int, channel)
-                yield channel
-
-    def __len__(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("count", 0)
-
-
 class GetChannelStatusResponse(
     CommandResponse, network.GetChannelStatusResponse, test="is_response"
 ):
@@ -134,14 +82,13 @@ class GetChannelStatusResponse(
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetChannelStatusResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetChannelStatusRequest.COMMAND)
 
     @property
     def channels(self):
-        return _ChannelStatuses(self._get_value)
+        # we are not passing the factory here since this object is meant to be detachable
+        return models.ChannelStatuses(self._get_value())
 
 
 class GetNetworkPortsRequest(CommandRequest, network.GetNetworkPortsRequest):
@@ -167,9 +114,7 @@ class GetNetworkPortsResponse(
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetNetworkPortsResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetNetworkPortsRequest.COMMAND)
 
     def _get_ports(self) -> dict:
@@ -181,7 +126,8 @@ class GetNetworkPortsResponse(
 
     @property
     def ports(self):
-        return models.NetworkPorts(self._get_ports)
+        # we are not passing the factory here since this object is meant to be detachable
+        return models.NetworkPorts(self._get_ports())
 
 
 class GetRTSPUrlsRequest(CommandRequest, network.GetRTSPUrlsRequest):
@@ -241,9 +187,7 @@ class GetRTSPUrlsResponse(
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetRTSPUrlsResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetRTSPUrlsRequest.COMMAND)
 
     def _get_urls(self) -> dict:
@@ -261,7 +205,8 @@ class GetRTSPUrlsResponse(
 
     @property
     def urls(self):
-        return _RTSPUrls(self._get_urls)
+        # we are not passing the factory here since this object is meant to be detachable
+        return _RTSPUrls(self._get_urls())
 
 
 class GetP2PRequest(CommandRequest, network.GetP2PRequest):
@@ -285,9 +230,7 @@ class GetP2PResponse(CommandResponse, network.GetP2PResponse, test="is_response"
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetP2PResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetP2PRequest.COMMAND)
 
     def _get_info(self) -> dict:
@@ -297,4 +240,5 @@ class GetP2PResponse(CommandResponse, network.GetP2PResponse, test="is_response"
 
     @property
     def info(self):
-        return models.P2PInfo(self._get_info)
+        # we are not passing the factory here since this object is meant to be detachable
+        return models.P2PInfo(self._get_info())

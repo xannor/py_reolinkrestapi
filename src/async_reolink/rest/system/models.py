@@ -13,11 +13,16 @@ _T = TypeVar("_T")
 class DeviceInfo(typings.DeviceInfo):
     """Device Info"""
 
-    __slots__ = ("_factory",)
+    __slots__ = ("_value",)
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
+    def __init__(self, value: dict) -> None:
         super().__init__()
-        self._factory = factory
+        if value is None:
+            value = {}
+        self._value = value
+
+    def _factory(self):
+        return self._value
 
     class IO(typings.DeviceInfo.IO):
         """IO"""
@@ -159,6 +164,13 @@ class DeviceInfo(typings.DeviceInfo):
             return ""
         return value.get("pakSuffix", "")
 
+    def update(self, value: "DeviceInfo"):
+        if not isinstance(value, type(self)):
+            raise TypeError("Can only update from another DeviceInfo")
+        # pylint: disable=protected-access
+        self._value = value._value
+        return self
+
 
 class DaylightSavingsTimeInfo(system.DaylightSavingsTimeInfo):
     """Dalight Savings Time Info"""
@@ -176,7 +188,7 @@ class DaylightSavingsTimeInfo(system.DaylightSavingsTimeInfo):
         return value.get("enable", False)
 
     @property
-    def offset(self):
+    def hour_offset(self):
         if (value := self._factory()) is None:
             return 0
         return value.get("offset", 0)

@@ -37,13 +37,11 @@ class GetEncodingResponse(
     """Get Encoding REST Response"""
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetEncodingResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetEncodingRequest.COMMAND)
 
     def _get_info(self) -> dict:
-        if (value := self._value) is None:
+        if (value := self._get_value()) is None:
             return None
         return value.get("Enc", None)
 

@@ -2,7 +2,7 @@
 
 from typing import Mapping, Sequence
 from async_reolink.api import led
-from async_reolink.api.led.typings import LightStates, LightingSchedule
+from async_reolink.api.led.typings import LightStates, LightingSchedule, WhiteLedInfo
 from async_reolink.api.ai.typings import AITypes
 from async_reolink.api.typings import PercentValue
 
@@ -29,21 +29,17 @@ class LED(led.LED):
 
     def _create_set_white_led_request(
         self,
-        state: LightStates,
-        brightness: PercentValue | None,
-        mode: int | None,
-        schedule: LightingSchedule | None,
-        ai_detect: Mapping[AITypes, bool] | Sequence[AITypes] | AITypes | None,
+        info: WhiteLedInfo,
         channel: int,
     ):
         req = commands.SetWhiteLedRequest(channel)
-        req.info.state = state
-        if brightness is not None:
-            req.info.brightness = brightness
-        if mode is not None:
-            req.info.brightness_state = mode
-        if schedule is not None:
-            req.info.lighting_schedule = schedule
-        if ai_detect is not None:
-            req.info.ai_detection_type = ai_detect
+        req.info.state = info.state
+        if info.brightness is not None:
+            req.info.brightness = info.brightness
+        if info.brightness_state is not None:
+            req.info.brightness_state = info.brightness_state
+        if info.lighting_schedule is not None:
+            req.info.lighting_schedule = info.lighting_schedule
+        if info.ai_detection_type is not None:
+            req.info.ai_detection_type = info.ai_detection_type
         return req

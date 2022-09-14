@@ -30,7 +30,7 @@ class LoginRequest(CommandRequest, security.LoginRequest):
         self.password = password
 
     def _get_login(self, create=False) -> dict:
-        _key: Final = "Login"
+        _key: Final = "User"
         if (parameter := self._get_parameter(create)) is None:
             return None
         if _key in parameter or not create:
@@ -72,9 +72,7 @@ class LoginResponse(CommandResponse, security.LoginResponse, test="is_response")
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["LoginResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, LoginRequest.COMMAND)
 
     def _get_token(self) -> dict:

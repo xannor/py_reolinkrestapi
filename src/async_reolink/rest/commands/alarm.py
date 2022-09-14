@@ -30,9 +30,7 @@ class GetMotionStateResponse(
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetMotionStateResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetMotionStateRequest.COMMAND)
 
     @property

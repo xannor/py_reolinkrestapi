@@ -132,9 +132,7 @@ class SearchRecordingsResponse(
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["SearchRecordingsResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, SearchRecordingsRequest.COMMAND)
 
     def _get_sub_value(self) -> list:

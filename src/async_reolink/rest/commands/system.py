@@ -61,9 +61,7 @@ class GetAbilitiesResponse(
     """REST Get Capability Response"""
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetAbilitiesResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetAbilitiesRequest.COMMAND)
 
     def _get_ability(self) -> dict:
@@ -75,7 +73,8 @@ class GetAbilitiesResponse(
 
     @property
     def capabilities(self):
-        return Capabilities(self._get_ability)
+        # we are not passing the factory here since this object is meant to be updatable
+        return Capabilities(self._get_ability())
 
 
 class GetDeviceInfoRequest(CommandRequest, system.GetDeviceInfoRequest):
@@ -97,9 +96,7 @@ class GetDeviceInfoResponse(
     """REST Get Device Info Response"""
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetDeviceInfoResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetDeviceInfoRequest.COMMAND)
 
     def _get_info(self) -> dict:
@@ -112,7 +109,8 @@ class GetDeviceInfoResponse(
     @property
     def info(self):
         """device info"""
-        return DeviceInfo(self._get_info)
+        # we are not passing the factory here since this object is meant to be updatable
+        return DeviceInfo(self._get_info())
 
 
 class GetTimeRequest(CommandRequest, system.GetTimeRequest):
@@ -132,9 +130,7 @@ class GetTimeResponse(CommandResponse, system.GetTimeResponse, test="is_response
     """REST Get Time Response"""
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetTimeResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetTimeRequest.COMMAND)
 
     def _get_dst(self) -> dict:

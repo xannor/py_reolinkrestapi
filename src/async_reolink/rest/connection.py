@@ -369,7 +369,7 @@ class Connection(BaseConnection):
         )
 
         for response in responses:
-            yield self.__process_response(responses)
+            yield self.__process_response(response)
 
     def _execute(self, *args: BaseCommandRequest):
         """Internal API"""

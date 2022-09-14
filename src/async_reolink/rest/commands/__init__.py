@@ -122,8 +122,7 @@ class CommandResponse(commands.CommandResponse, ABC):
             isinstance(value, dict)
             and _COMMAND_KEY in value
             and _CODE_KEY in value
-            and command is None
-            or command == value[_COMMAND_KEY]
+            and (command is None or command == value[_COMMAND_KEY])
         )
 
     @classmethod

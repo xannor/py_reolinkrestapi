@@ -1,6 +1,6 @@
 """System capabilities"""
 
-from typing import Callable, Mapping, TypeVar
+from typing import Callable, Mapping, TypeVar, overload
 from async_reolink.api.system import capabilities
 
 _T = TypeVar("_T")
@@ -8,30 +8,72 @@ _T = TypeVar("_T")
 # pylint: disable=too-few-public-methods
 # pylint: disable=missing-function-docstring
 
+_defaults: dict[type, any] = {None: 0}
+
 
 class Capability(capabilities.Capability[_T]):
     """Capability"""
 
-    __slots__ = ("_factory",)
+    __slots__ = ("_factory", "_init")
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
+    @overload
+    def __init__(self: "Capability[int]", factory: Callable[[], any] = None):
+        ...
+
+    @overload
+    def __init__(
+        self, factory: Callable[[], dict], __type: Callable[[int], _T]
+    ) -> None:
+        ...
+
+    def __init__(
+        self, factory: Callable[[], dict], __type: Callable[[int], _T] = None
+    ) -> None:
         super().__init__()
         self._factory = factory
+        self._init = __type
+        if __type not in _defaults:
+            _defaults[__type] = __type(0)
 
-    @property
-    def value(self) -> _T:
+    def _get_value(self) -> int:
         if (value := self._factory()) is None:
             return 0
         return value.get("ver", 0)
 
     @property
-    def permissions(self):
+    def value(self) -> _T:
+        value = self._get_value()
+        if value == 0:
+            return _defaults[self._init]
+        if self._init is not None:
+            return self._init(value)
+        return value
+
+    @property
+    def permissions(self) -> capabilities.Permissions:
         if (value := self._factory()) is None:
             return 0
         return value.get("perm", 0)
 
     def __bool__(self):
-        return bool(self.value)
+        return bool(self._get_value())
+
+    def __index__(self):
+        return self._get_value()
+
+    def __int__(self):
+        return self._get_value()
+
+    def __str__(self):
+        return str(self.value)
+
+    def __eq__(self, __o: object) -> bool:
+        if hasattr(__o, "__index__"):
+            return self._get_value() == __o.__index__()
+        return self._get_value() == __o
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
 
 class ChannelCapabilities(capabilities.ChannelCapabilities):
@@ -42,6 +84,14 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
     def __init__(self, factory: Callable[[], dict]) -> None:
         super().__init__()
         self._factory = factory
+
+    def _keyed_factory(self, key: str):
+        def _factory():
+            if (value := self._factory()) is None:
+                return None
+            return value.get(key, None)
+
+        return _factory
 
     class AI(capabilities.ChannelCapabilities.AI):
         """AI"""
@@ -61,14 +111,17 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
                 super().__init__()
                 self._factory = factory
 
-            @property
-            def _value(self):
-                def _get():
+            def _keyed_factory(self, key: str):
+                def _factory():
                     if (value := self._factory()) is None:
                         return None
-                    return value.get("aiTrack", None)
+                    return value.get(key, None)
 
-                return Capability(_get)
+                return _factory
+
+            @property
+            def _value(self):
+                return Capability(self._keyed_factory("aiTrack"))
 
             @property
             def value(self):
@@ -83,12 +136,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
             @property
             def pet(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("aiTrackDogCat", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("aiTrackDogCat"))
 
         @property
         def track(self):
@@ -107,50 +155,33 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def audio(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("alarmAudio", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def audio(self):
+            return Capability(self._keyed_factory("alarmAudio"))
 
         @property
         def io_in(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("alarmIoIn", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("alarmIoIn"))
 
         @property
         def io_out(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("alarmIoOut", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("alarmIoOut"))
 
         @property
         def motion(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("alarmMd", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("alarmMd"))
 
         @property
         def rf(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("alarmRf", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("alarmRf"))
 
     @property
     def alarm(self):
@@ -158,84 +189,39 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def battery(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("battery", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("battery"))
 
     @property
     def battery_analysis(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("batAnalysis", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("batAnalysis"))
 
     @property
     def camera_mode(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("cameraMode", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("cameraMode"))
 
     @property
     def disable_autofocus(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("disableAutoFocus", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("disableAutoFocus"))
 
     @property
     def enc(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("enc", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("enc"))
 
     @property
     def floodlight(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("floodLight", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("floodLight"))
 
     @property
     def ftp(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("ftp", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("ftp"))
 
     @property
     def image(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("image", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("image"))
 
     @property
     def indicator_light(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("indicatorLight", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("indicatorLight"))
 
     class ISP(capabilities.ChannelCapabilities.ISP):
         """ISP"""
@@ -246,14 +232,17 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def _value(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("isp", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def _value(self):
+            return Capability(self._keyed_factory("isp"))
 
         @property
         def value(self):
@@ -268,120 +257,55 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
         @property
         def threeDnr(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("isp3Dnr", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("isp3Dnr"))
 
         @property
         def antiflicker(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispAntiFlick", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispAntiFlick"))
 
         @property
         def backlight(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispBackLight", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispBackLight"))
 
         @property
         def bright(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispBright", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispBright"))
 
         @property
         def contrast(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispContrast", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispContrast"))
 
         @property
         def day_night(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispDayNight", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispDayNight"))
 
         @property
         def exposure_mode(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispExposureMode", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispExposureMode"))
 
         @property
         def flip(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispFlip", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispFlip"))
 
         @property
         def hue(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispHue", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispHue"))
 
         @property
         def mirror(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispMirror", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispMirror"))
 
         @property
         def satruation(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispSatruation", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispSatruation"))
 
         @property
         def sharpen(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispSharpen", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispSharpen"))
 
         @property
         def white_balance(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ispWhiteBalance", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ispWhiteBalance"))
 
     @property
     def isp(self):
@@ -389,39 +313,19 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def led_control(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("ledControl", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("ledControl"))
 
     @property
     def live(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("live", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("live"))
 
     @property
     def main_encoding(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("mainEncType", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("mainEncType"))
 
     @property
     def mask(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("mask", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("mask"))
 
     class MD(capabilities.ChannelCapabilities.MD):
         """MotionDetection"""
@@ -432,6 +336,14 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             super().__init__()
             self._factory = factory
 
+        def _keyed_factory(self, key: str):
+            def _factory():
+                if (value := self._factory()) is None:
+                    return None
+                return value.get(key, None)
+
+            return _factory
+
         class Trigger(capabilities.ChannelCapabilities.MD.Trigger):
             """Trigger"""
 
@@ -441,34 +353,29 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
                 super().__init__()
                 self._factory = factory
 
-            @property
-            def audio(self):
-                def _get():
+            def _keyed_factory(self, key: str):
+                def _factory():
                     if (value := self._factory()) is None:
                         return None
-                    return value.get("mdTriggerAudio", None)
+                    return value.get(key, None)
 
-                return Capability(_get)
+                return _factory
+
+            @property
+            def audio(self):
+                return Capability(self._keyed_factory("mdTriggerAudio"))
 
             @property
             def record(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("mdTriggerRecord", None)
+                return Capability(self._keyed_factory("mdTriggerRecord"))
 
-                return Capability(_get)
-
-        trigger: Trigger
+        @property
+        def trigger(self):
+            return type(self).Trigger(self._factory)
 
         @property
         def with_pir(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("mdWithPir", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("mdWithPir"))
 
     @property
     def motion_detection(self):
@@ -476,21 +383,11 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def osd(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("osd", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("osd"))
 
     @property
     def power_led(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("powerLed", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("powerLed"))
 
     class PTZ(capabilities.ChannelCapabilities.PTZ):
         """PTZ"""
@@ -501,59 +398,37 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def control(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("ptzCtrl", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def control(self):
+            return Capability(self._keyed_factory("ptzCtrl"))
 
         @property
         def direction(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ptzDirection", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ptzDirection"))
 
         @property
         def patrol(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ptzPatrol", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ptzPatrol"))
 
         @property
         def preset(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ptzPreset", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ptzPreset"))
 
         @property
         def tattern(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ptzTattern", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ptzTattern"))
 
         @property
         def type(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ptzType", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ptzType"))
 
     @property
     def ptz(self):
@@ -568,41 +443,29 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def config(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("recCfg", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def config(self):
+            return Capability(self._keyed_factory("recCfg"))
 
         @property
         def download(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("recDownload", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("recDownload"))
 
         @property
         def replay(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("recReplay", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("recReplay"))
 
         @property
         def schedule(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("recSchedule", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("recSchedule"))
 
     @property
     def record(self):
@@ -610,21 +473,11 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def shelter_config(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("shelterCfg", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("shelterCfg"))
 
     @property
     def snap(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("snap", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("snap"))
 
     class Supports(capabilities.ChannelCapabilities.Supports):
         """Supports"""
@@ -635,6 +488,14 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             super().__init__()
             self._factory = factory
 
+        def _keyed_factory(self, key: str):
+            def _factory():
+                if (value := self._factory()) is None:
+                    return None
+                return value.get(key, None)
+
+            return _factory
+
         class AI(capabilities.ChannelCapabilities.Supports.AI):
             """AI"""
 
@@ -644,14 +505,17 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
                 super().__init__()
                 self._factory = factory
 
-            @property
-            def _value(self):
-                def _get():
+            def _keyed_factory(self, key: str):
+                def _factory():
                     if (value := self._factory()) is None:
                         return None
-                    return value.get("supportAi", None)
+                    return value.get(key, None)
 
-                return Capability(_get)
+                return _factory
+
+            @property
+            def _value(self):
+                return Capability(self._keyed_factory("supportAi"))
 
             @property
             def value(self):
@@ -666,102 +530,47 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
             @property
             def animal(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiAnimal", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiAnimal"))
 
             @property
             def detect_config(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiDetectConfig", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiDetectConfig"))
 
             @property
             def pet(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiDogCat", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiDogCat"))
 
             @property
             def face(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiFace", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiFace"))
 
             @property
             def people(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiPeople", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiPeople"))
 
             @property
             def sensitivity(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiSensitivity", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiSensitivity"))
 
             @property
             def stay_time(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiStayTime", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiStayTime"))
 
             @property
             def target_size(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiTargetSize", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiTargetSize"))
 
             @property
             def track_classify(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiTrackClassify", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiTrackClassify"))
 
             @property
             def vehicle(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAiVehicle", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAiVehicle"))
 
             @property
             def adjust(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportAoAdjust", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportAoAdjust"))
 
         @property
         def ai(self):
@@ -776,50 +585,33 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
                 super().__init__()
                 self._factory = factory
 
-            @property
-            def brightness(self):
-                def _get():
+            def _keyed_factory(self, key: str):
+                def _factory():
                     if (value := self._factory()) is None:
                         return None
-                    return value.get("supportFLBrightness", None)
+                    return value.get(key, None)
 
-                return Capability(_get)
+                return _factory
+
+            @property
+            def brightness(self):
+                return Capability(self._keyed_factory("supportFLBrightness"))
 
             @property
             def intelligent(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportFLIntelligent", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportFLIntelligent"))
 
             @property
             def keep_on(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportFLKeepOn", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportFLKeepOn"))
 
             @property
             def schedule(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportFLSchedule", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportFLSchedule"))
 
             @property
             def switch(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportFLswitch", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportFLswitch"))
 
         @property
         def flood_light(self):
@@ -827,48 +619,23 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
         @property
         def gop(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportGop", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportGop"))
 
         @property
         def motion_detection(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportMd", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportMd"))
 
         @property
         def ptz_check(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportPtzCheck", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportPtzCheck"))
 
         @property
         def threshold_adjust(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportThresholdAdjust", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportThresholdAdjust"))
 
         @property
         def white_dark(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportWhiteDark", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportWhiteDark"))
 
     @property
     def supports(self):
@@ -876,30 +643,18 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def video_clip(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("videoClip", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("videoClip"))
 
     @property
     def watermark(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("waterMark", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("waterMark"))
 
     @property
     def white_balance(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("white_balance", None)
+        return Capability(self._keyed_factory("white_balance"))
 
-        return Capability(_get)
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
 
 class _Channels(Mapping[int, ChannelCapabilities]):
@@ -930,35 +685,36 @@ class _Channels(Mapping[int, ChannelCapabilities]):
             return 0
         return len(_list)
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
 
 class Capabilities(capabilities.Capabilities):
     """Capabilities"""
 
-    __slots__ = ("_factory",)
+    __slots__ = ("_value",)
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
+    def __init__(self, value: dict) -> None:
         super().__init__()
-        self._factory = factory
+        self._value = value
+
+    def _factory(self):
+        return self._value
+
+    def _keyed_factory(self, key: str):
+        def _factory():
+            return self._value.get(key, None)
+
+        return _factory
 
     @property
     def three_g(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("3g", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("3g"))
 
     @property
     def channels(self):
         """channels"""
-
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("abilityChn", None)
-
-        return _Channels(_get)
+        return _Channels(self._keyed_factory("abilityChn"))
 
     class Alarm(capabilities.Capabilities.Alarm):
         """Alarm"""
@@ -969,23 +725,21 @@ class Capabilities(capabilities.Capabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def audio(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("alarmAudio", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def audio(self):
+            return Capability(self._keyed_factory("alarmAudio"))
 
         @property
         def disconnect(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("alarmDisconnet", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("alarmDisconnet"))
 
         class HDD(capabilities.Capabilities.Alarm.HDD):
             """HDDD"""
@@ -996,23 +750,21 @@ class Capabilities(capabilities.Capabilities):
                 super().__init__()
                 self._factory = factory
 
-            @property
-            def error(self):
-                def _get():
+            def _keyed_factory(self, key: str):
+                def _factory():
                     if (value := self._factory()) is None:
                         return None
-                    return value.get("alarmHddErr", None)
+                    return value.get(key, None)
 
-                return Capability(_get)
+                return _factory
+
+            @property
+            def error(self):
+                return Capability(self._keyed_factory("alarmHddErr"))
 
             @property
             def full(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("alarmHddFull", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("alarmHddFull"))
 
         @property
         def hdd(self):
@@ -1020,12 +772,7 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def ip_conflict(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("alarmIpConflict", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("alarmIpConflict"))
 
     @property
     def alarm(self):
@@ -1033,57 +780,27 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def auth(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("auth", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("auth"))
 
     @property
     def auto_maintenance(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("autoMaint", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("autoMaint"))
 
     @property
     def cloud_storage(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("cloudStorage", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("cloudStorage"))
 
     @property
     def custom_audio(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("customAudio", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("customAudio"))
 
     @property
     def date_format(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("dateFormat", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("dateFormat"))
 
     @property
     def ddns(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("ddns", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("ddns"))
 
     class Device(capabilities.Capabilities.Device):
         """Device"""
@@ -1094,23 +811,21 @@ class Capabilities(capabilities.Capabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def info(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("devInfo", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def info(self):
+            return Capability(self._keyed_factory("devInfo"))
 
         @property
         def name(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("devName", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("devName"))
 
     @property
     def device(self):
@@ -1118,30 +833,15 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def disable_autofocus(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("disableAutoFocus", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("disableAutoFocus"))
 
     @property
     def disk(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("disk", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("disk"))
 
     @property
     def display(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("display", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("display"))
 
     class Email(capabilities.Capabilities.Email):
         """Email"""
@@ -1152,14 +852,17 @@ class Capabilities(capabilities.Capabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def _value(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("email", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def _value(self):
+            return Capability(self._keyed_factory("email"))
 
         @property
         def value(self):
@@ -1174,21 +877,11 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def interval(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("emailInterval", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("emailInterval"))
 
         @property
         def schedule(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("emailSchedule", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("emailSchedule"))
 
     @property
     def email(self):
@@ -1196,21 +889,11 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def config_import(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("importCfg", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("importCfg"))
 
     @property
     def config_export(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("exportCfg", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("exportCfg"))
 
     class FTP(capabilities.Capabilities.FTP):
         """FTP"""
@@ -1221,14 +904,17 @@ class Capabilities(capabilities.Capabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def auto_dir(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("ftpAutoDir", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def auto_dir(self):
+            return Capability(self._keyed_factory("ftpAutoDir"))
 
         class Stream(capabilities.Capabilities.FTP.Stream):
             """Stream"""
@@ -1239,23 +925,21 @@ class Capabilities(capabilities.Capabilities):
                 super().__init__()
                 self._factory = factory
 
-            @property
-            def ext(self):
-                def _get():
+            def _keyed_factory(self, key: str):
+                def _factory():
                     if (value := self._factory()) is None:
                         return None
-                    return value.get("ftpExtStream", None)
+                    return value.get(key, None)
 
-                return Capability(_get)
+                return _factory
+
+            @property
+            def ext(self):
+                return Capability(self._keyed_factory("ftpExtStream"))
 
             @property
             def sub(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("ftpSubStream", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("ftpSubStream"))
 
         @property
         def stream(self):
@@ -1263,21 +947,11 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def picture(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ftpPic", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ftpPic"))
 
         @property
         def test(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("ftpTest", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("ftpTest"))
 
     @property
     def ftp(self):
@@ -1287,165 +961,75 @@ class Capabilities(capabilities.Capabilities):
     def hour_format(self):
         """change hour format supported"""
 
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("hourFmt", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("hourFmt"))
 
     @property
     def http(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("http", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("http"))
 
     @property
     def http_flv(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("httpFlv", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("httpFlv"))
 
     @property
     def https(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("https", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("https"))
 
     @property
     def ipc_manager(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("ipcManager", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("ipcManager"))
 
     @property
     def led_control(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("ledControl", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("ledControl"))
 
     @property
     def local_link(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("localLink", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("localLink"))
 
     @property
     def log(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("log", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("log"))
 
     @property
     def media_port(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("mediaPort", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("mediaPort"))
 
     @property
     def ntp(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("ntp", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("ntp"))
 
     @property
     def online(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("online", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("online"))
 
     @property
     def onvif(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("onvif", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("onvif"))
 
     @property
     def p2p(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("p2p", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("p2p"))
 
     @property
     def performance(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("performance", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("performance"))
 
     @property
     def pppoe(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("pppoe", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("pppoe"))
 
     @property
     def push(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("push", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("push"))
 
     @property
     def push_schedule(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("pushSchedule", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("pushSchedule"))
 
     @property
     def reboot(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("reboot", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("reboot"))
 
     class Record(capabilities.Capabilities.Record):
         """Record"""
@@ -1456,41 +1040,29 @@ class Capabilities(capabilities.Capabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def extension_time_list(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("recExtensionTimeList", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def extension_time_list(self):
+            return Capability(self._keyed_factory("recExtensionTimeList"))
 
         @property
         def overwrite(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("recOverWrite", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("recOverWrite"))
 
         @property
         def pack_duration(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("recPackDuration", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("recPackDuration"))
 
         @property
         def pre_record(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("recPreRecord", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("recPreRecord"))
 
     @property
     def record(self):
@@ -1498,66 +1070,31 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def restore(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("restore", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("restore"))
 
     @property
     def rtmp(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("rtmp", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("rtmp"))
 
     @property
     def rtsp(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("rtsp", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("rtsp"))
 
     @property
     def schedule_version(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("scheduleVersion", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("scheduleVersion"))
 
     @property
     def sd_card(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("sdCard", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("sdCard"))
 
     @property
     def show_qr_code(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("showQrCode", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("showQrCode"))
 
     @property
     def sim_module(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("simModule", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("simModule"))
 
     class Supports(capabilities.Capabilities.Supports):
         """Supports"""
@@ -1586,14 +1123,17 @@ class Capabilities(capabilities.Capabilities):
                     super().__init__()
                     self._factory = factory
 
-                @property
-                def _value(self):
-                    def _get():
+                def _keyed_factory(self, key: str):
+                    def _factory():
                         if (value := self._factory()) is None:
                             return None
-                        return value.get("supportAudioAlarm", None)
+                        return value.get(key, None)
 
-                    return Capability(_get)
+                    return _factory
+
+                @property
+                def _value(self):
+                    return Capability(self._keyed_factory("supportAudioAlarm"))
 
                 @property
                 def value(self):
@@ -1608,30 +1148,17 @@ class Capabilities(capabilities.Capabilities):
 
                 @property
                 def enable(self):
-                    def _get():
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get("supportAudioAlarmEnable", None)
-
-                    return Capability(_get)
+                    return Capability(self._keyed_factory("supportAudioAlarmEnable"))
 
                 @property
                 def schedule(self):
-                    def _get():
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get("supportAudioAlarmSchedule", None)
-
-                    return Capability(_get)
+                    return Capability(self._keyed_factory("supportAudioAlarmSchedule"))
 
                 @property
                 def task_enable(self):
-                    def _get():
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get("supportAudioAlarmTaskEnable", None)
-
-                    return Capability(_get)
+                    return Capability(
+                        self._keyed_factory("supportAudioAlarmTaskEnable")
+                    )
 
             @property
             def alarm(self):
@@ -1659,14 +1186,17 @@ class Capabilities(capabilities.Capabilities):
                     super().__init__()
                     self._factory = factory
 
-                @property
-                def _value(self):
-                    def _get():
+                def _keyed_factory(self, key: str):
+                    def _factory():
                         if (value := self._factory()) is None:
                             return None
-                        return value.get("supportBuzzerTask", None)
+                        return value.get(key, None)
 
-                    return Capability(_get)
+                    return _factory
+
+                @property
+                def _value(self):
+                    return Capability(self._keyed_factory("supportBuzzerTask"))
 
                 @property
                 def value(self):
@@ -1681,21 +1211,19 @@ class Capabilities(capabilities.Capabilities):
 
                 @property
                 def enable(self):
-                    def _get():
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get("supportBuzzerEnable", None)
+                    return Capability(self._keyed_factory("supportBuzzerEnable"))
 
-                    return Capability(_get)
+            def _keyed_factory(self, key: str):
+                def _factory():
+                    if (value := self._factory()) is None:
+                        return None
+                    return value.get(key, None)
+
+                return _factory
 
             @property
             def _value(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportBuzzer", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportBuzzer"))
 
             @property
             def task(self):
@@ -1724,23 +1252,21 @@ class Capabilities(capabilities.Capabilities):
                 super().__init__()
                 self._factory = factory
 
-            @property
-            def enable(self):
-                def _get():
+            def _keyed_factory(self, key: str):
+                def _factory():
                     if (value := self._factory()) is None:
                         return None
-                    return value.get("supportEmailEnable", None)
+                    return value.get(key, None)
 
-                return Capability(_get)
+                return _factory
+
+            @property
+            def enable(self):
+                return Capability(self._keyed_factory("supportEmailEnable"))
 
             @property
             def task_enable(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportEmailTaskEnable", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportEmailTaskEnable"))
 
         @property
         def email(self):
@@ -1764,23 +1290,29 @@ class Capabilities(capabilities.Capabilities):
                     super().__init__()
                     self._factory = factory
 
-                @property
-                def picture(self):
-                    def _get():
+                def _keyed_factory(self, key: str):
+                    def _factory():
                         if (value := self._factory()) is None:
                             return None
-                        return value.get("supportFtpCoverPicture", None)
+                        return value.get(key, None)
 
-                    return Capability(_get)
+                    return _factory
+
+                @property
+                def picture(self):
+                    return Capability(self._keyed_factory("supportFtpCoverPicture"))
 
                 @property
                 def video(self):
-                    def _get():
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get("supportFtpCoverVideo", None)
+                    return Capability(self._keyed_factory("supportFtpCoverVideo"))
 
-                    return Capability(_get)
+            def _keyed_factory(self, key: str):
+                def _factory():
+                    if (value := self._factory()) is None:
+                        return None
+                    return value.get(key, None)
+
+                return _factory
 
             @property
             def cover(self):
@@ -1788,21 +1320,11 @@ class Capabilities(capabilities.Capabilities):
 
             @property
             def dir_YM(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportFtpDirYM", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportFtpDirYM"))
 
             @property
             def enable(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportFtpEnable", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportFtpEnable"))
 
             class Picture(capabilities.Capabilities.Supports.FTP.Picture):
                 """Picture"""
@@ -1813,32 +1335,25 @@ class Capabilities(capabilities.Capabilities):
                     super().__init__()
                     self._factory = factory
 
-                @property
-                def capture_mode(self):
-                    def _get():
+                def _keyed_factory(self, key: str):
+                    def _factory():
                         if (value := self._factory()) is None:
                             return None
-                        return value.get("supportFtpPicCaptureMode", None)
+                        return value.get(key, None)
 
-                    return Capability(_get)
+                    return _factory
+
+                @property
+                def capture_mode(self):
+                    return Capability(self._keyed_factory("supportFtpPicCaptureMode"))
 
                 @property
                 def custom_resolution(self):
-                    def _get():
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get("supportFtpPicResoCustom", None)
-
-                    return Capability(_get)
+                    return Capability(self._keyed_factory("supportFtpPicResoCustom"))
 
                 @property
                 def swap(self):
-                    def _get():
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get("supportFtpPictureSwap", None)
-
-                    return Capability(_get)
+                    return Capability(self._keyed_factory("supportFtpPictureSwap"))
 
             @property
             def picture(self):
@@ -1853,14 +1368,17 @@ class Capabilities(capabilities.Capabilities):
                     super().__init__()
                     self._factory = factory
 
-                @property
-                def _value(self):
-                    def _get():
+                def _keyed_factory(self, key: str):
+                    def _factory():
                         if (value := self._factory()) is None:
                             return None
-                        return value.get("supportFtpTask", None)
+                        return value.get(key, None)
 
-                    return Capability(_get)
+                    return _factory
+
+                @property
+                def _value(self):
+                    return Capability(self._keyed_factory("supportFtpTask"))
 
                 @property
                 def value(self):
@@ -1875,12 +1393,15 @@ class Capabilities(capabilities.Capabilities):
 
                 @property
                 def enable(self):
-                    def _get():
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get("supportFtpTaskEnable", None)
+                    return Capability(self._keyed_factory("supportFtpTaskEnable"))
 
-                    return Capability(_get)
+            def _keyed_factory(self, key: str):
+                def _factory():
+                    if (value := self._factory()) is None:
+                        return None
+                    return value.get(key, None)
+
+                return _factory
 
             @property
             def task(self):
@@ -1888,21 +1409,19 @@ class Capabilities(capabilities.Capabilities):
 
             @property
             def video_swap(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportFtpVideoSwap", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportFtpVideoSwap"))
 
             @property
             def ftps_encrypt(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportFtpsEncrypt", None)
+                return Capability(self._keyed_factory("supportFtpsEncrypt"))
 
-                return Capability(_get)
+        def _keyed_factory(self, key: str):
+            def _factory():
+                if (value := self._factory()) is None:
+                    return None
+                return value.get(key, None)
+
+            return _factory
 
         @property
         def ftp(self):
@@ -1910,39 +1429,19 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def http_enable(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportHttpEnable", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportHttpEnable"))
 
         @property
         def https_enable(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportHttpsEnable", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportHttpsEnable"))
 
         @property
         def onvif_enable(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportOnvifEnable", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportOnvifEnable"))
 
         @property
         def push_interval(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportPushInterval", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportPushInterval"))
 
         class Record(capabilities.Capabilities.Supports.Record):
             """Record"""
@@ -1953,23 +1452,21 @@ class Capabilities(capabilities.Capabilities):
                 super().__init__()
                 self._factory = factory
 
-            @property
-            def schedule_enable(self):
-                def _get():
+            def _keyed_factory(self, key: str):
+                def _factory():
                     if (value := self._factory()) is None:
                         return None
-                    return value.get("supportRecScheduleEnable", None)
+                    return value.get(key, None)
 
-                return Capability(_get)
+                return _factory
+
+            @property
+            def schedule_enable(self):
+                return Capability(self._keyed_factory("supportRecScheduleEnable"))
 
             @property
             def enable(self):
-                def _get():
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get("supportRecordEnable", None)
-
-                return Capability(_get)
+                return Capability(self._keyed_factory("supportRecordEnable"))
 
         @property
         def record(self):
@@ -1977,21 +1474,11 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def rtmp_enable(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportRtmpEnable", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportRtmpEnable"))
 
         @property
         def rtsp_enable(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("supportRtspEnable", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("supportRtspEnable"))
 
     @property
     def supports(self):
@@ -1999,66 +1486,31 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def talk(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("talk", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("talk"))
 
     @property
     def time(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("time", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("time"))
 
     @property
     def tv_system(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("tvSystem", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("tvSystem"))
 
     @property
     def upgrade(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("upgrade", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("upgrade"))
 
     @property
     def upnp(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("upnp", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("upnp"))
 
     @property
     def user(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("user", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("user"))
 
     @property
     def video_clip(self):
-        def _get():
-            if (value := self._factory()) is None:
-                return None
-            return value.get("videoClip", None)
-
-        return Capability(_get)
+        return Capability(self._keyed_factory("videoClip"))
 
     class Wifi(capabilities.Capabilities.Wifi):
         """WIFI"""
@@ -2069,14 +1521,17 @@ class Capabilities(capabilities.Capabilities):
             super().__init__()
             self._factory = factory
 
-        @property
-        def _value(self):
-            def _get():
+        def _keyed_factory(self, key: str):
+            def _factory():
                 if (value := self._factory()) is None:
                     return None
-                return value.get("wifi", None)
+                return value.get(key, None)
 
-            return Capability(_get)
+            return _factory
+
+        @property
+        def _value(self):
+            return Capability(self._keyed_factory("wifi"))
 
         @property
         def value(self):
@@ -2091,13 +1546,18 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def testable(self):
-            def _get():
-                if (value := self._factory()) is None:
-                    return None
-                return value.get("wifiTest", None)
-
-            return Capability(_get)
+            return Capability(self._keyed_factory("wifiTest"))
 
     @property
     def wifi(self):
         return type(self).Wifi(self._factory)
+
+    def update(self, value: "Capabilities"):
+        if not isinstance(value, type(self)):
+            raise TypeError("Can only update from another Capabilities")
+        # pylint: disable=protected-access
+        self._value = value._value
+        return self
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._value)}>"

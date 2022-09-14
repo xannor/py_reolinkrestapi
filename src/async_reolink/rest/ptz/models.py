@@ -13,6 +13,29 @@ _ID_KEY: Final = "id"
 _ENABLE_KEY: Final = "enable"
 _NAME_KEY: Final = "name"
 
+_FOCUS_KEY: Final = "focus"
+_ZOOM_KEY: Final = "zoom"
+
+
+class ZoomFocus(typings.ZoomFocus):
+    """REST PTZ Zoom/Focus"""
+
+    __slots__ = ("_value",)
+
+    def __init__(self, value: dict) -> None:
+        super().__init__()
+        if value is None:
+            value = {}
+        self._value = value
+
+    @property
+    def zoom(self) -> int:
+        return self._value.get(_ZOOM_KEY, 0)
+
+    @property
+    def focus(self) -> int:
+        return self._value.get(_FOCUS_KEY, 0)
+
 
 class Preset(typings.Preset):
     """REST PTZ Preset"""

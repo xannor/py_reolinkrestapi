@@ -49,9 +49,7 @@ class GetIrLightsResponse(CommandResponse, led.GetIrLightsResponse, test="is_res
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetIrLightsResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetIrLightsRequest.COMMAND)
 
     def _get_lights(self) -> dict:
@@ -148,9 +146,7 @@ class GetPowerLedResponse(CommandResponse, led.GetPowerLedResponse, test="is_res
     channel_id = GetIrLightsResponse.channel_id
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetPowerLedResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetPowerLedRequest.COMMAND)
 
     def _get_lights(self) -> dict:
@@ -220,9 +216,7 @@ class GetWhiteLedResponse(CommandResponse, led.GetWhiteLedResponse, test="is_res
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetWhiteLedResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetWhiteLedRequest.COMMAND)
 
     def _get_lights(self) -> dict:

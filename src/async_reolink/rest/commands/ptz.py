@@ -1,6 +1,7 @@
 """REST PTZ Commands"""
 
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Final,
     Generator,
@@ -9,6 +10,7 @@ from typing import (
     MutableSequence,
     TypeGuard,
     TypeVar,
+    cast,
 )
 from async_reolink.api.commands import ptz
 from async_reolink.api.ptz import typings
@@ -28,6 +30,7 @@ from ..ptz.models import (
     Patrol,
     MutableTrack,
     Track,
+    ZoomFocus,
 )
 
 from ..typings import FactoryValue
@@ -117,9 +120,7 @@ class GetPresetResponse(CommandResponse, ptz.GetPresetResponse, test="is_respons
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetPresetResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetPresetRequest.COMMAND)
 
     def _get_sub_value(self) -> list:
@@ -128,6 +129,16 @@ class GetPresetResponse(CommandResponse, ptz.GetPresetResponse, test="is_respons
             if (value := self._get_value()) is not None
             else None
         )
+
+    @property
+    def channel_id(self) -> int:
+        if (_list := self._get_sub_value()) is None:
+            return None
+        if (value := next(_list, None)) is None:
+            return None
+        if TYPE_CHECKING:
+            value = cast(dict, value)
+        return value.get(_CHANNEL_KEY, None)
 
     @property
     def presets(self):
@@ -199,9 +210,7 @@ class GetPatrolResponse(CommandResponse, ptz.GetPatrolResponse, test="is_respons
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetPatrolResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetPatrolRequest.COMMAND)
 
     def _get_sub_value(self) -> list:
@@ -210,6 +219,16 @@ class GetPatrolResponse(CommandResponse, ptz.GetPatrolResponse, test="is_respons
             if (value := self._get_value()) is not None
             else None
         )
+
+    @property
+    def channel_id(self) -> int:
+        if (_list := self._get_sub_value()) is None:
+            return None
+        if (value := next(_list, None)) is None:
+            return None
+        if TYPE_CHECKING:
+            value = cast(dict, value)
+        return value.get(_CHANNEL_KEY, None)
 
     @property
     def patrols(self):
@@ -281,9 +300,7 @@ class GetTatternResponse(CommandResponse, ptz.GetTatternResponse):
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetTatternResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetTatternRequest.COMMAND)
 
     def _get_sub_value(self) -> list:
@@ -440,9 +457,7 @@ class GetAutoFocusResponse(
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetAutoFocusResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetAutoFocusRequest.COMMAND)
 
     def _get_sub_value(self) -> dict:
@@ -519,9 +534,6 @@ class GetZoomFocusRequest(CommandRequestWithChannel, ptz.GetZoomFocusRequest):
 
 _ZOOMFOCUS_KEY: Final = "ZoomFocus"
 
-_FOCUS_KEY: Final = "focus"
-_ZOOM_KEY: Final = "zoom"
-
 
 class GetZoomFocusResponse(CommandResponse, ptz.GetZoomFocusResponse):
     """Get Zoom/Focus Response"""
@@ -529,9 +541,7 @@ class GetZoomFocusResponse(CommandResponse, ptz.GetZoomFocusResponse):
     __slots__ = ()
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["GetAutoFocusResponse"]:
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetAutoFocusRequest.COMMAND)
 
     def _get_sub_value(self) -> dict:
@@ -544,16 +554,8 @@ class GetZoomFocusResponse(CommandResponse, ptz.GetZoomFocusResponse):
     channel_id = GetTatternResponse.channel_id
 
     @property
-    def zoom(self) -> int:
-        if (value := self._get_sub_value()) is None:
-            return 0
-        return value.get(_ZOOM_KEY, 0)
-
-    @property
-    def focus(self) -> int:
-        if (value := self._get_sub_value()) is None:
-            return 0
-        return value.get(_FOCUS_KEY, 0)
+    def state(self):
+        return ZoomFocus(self._get_sub_value())
 
 
 _DEFAULT_ZOOMOPERATION: Final = typings.ZoomOperation.ZOOM
