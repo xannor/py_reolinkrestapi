@@ -214,7 +214,10 @@ class NetworkPort(typings.NetworkPort):
     def enabled(self) -> bool:
         if (value := self._factory()) is None:
             return 0
-        return value.get(self._prefix + "Enable", 0)
+        # some versions dont support Enable so the port cannot be disabled, so we default to true if Port exists
+        return value.get(
+            self._prefix + "Enable", 1 if self._prefix + "Port" in value else 0
+        )
 
     def __bool__(self):
         return bool(self.enabled and self.value)
