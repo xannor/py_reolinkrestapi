@@ -1,6 +1,5 @@
 """REST Connection"""
 from __future__ import annotations
-from dataclasses import asdict
 
 from enum import IntEnum
 import inspect
@@ -284,10 +283,12 @@ class Connection(BaseConnection):
                             self.__session.timeout.total,
                             encryption=Encryption.HTTPS,
                         )
-                    async for response in self.__execute(*args):
+                    async for command_response in self.__execute(*args):
                         if TYPE_CHECKING:
-                            response = cast(bytes | BaseCommandResponse, response)
-                        yield response
+                            command_response = cast(
+                                bytes | BaseCommandResponse, command_response
+                            )
+                        yield command_response
                     return
 
                 _LOGGER.error(
@@ -335,23 +336,23 @@ class Connection(BaseConnection):
 
         if "json" in response.content_type:
             try:
-                responses = await response.json()
+                command_responses = await response.json()
             finally:
                 _cleanup()
         elif "text" in response.content_type:
             try:
-                responses = await response.text()
+                command_responses = await response.text()
             finally:
                 _cleanup()
 
-            if responses[0] != "[":
+            if command_responses[0] != "[":
                 _LOGGER.error("did not get json as response: (%s)", data)
                 raise errors.ReolinkResponseError(
                     code=errors.ErrorCodes.PROTOCOL_ERROR,
                     details="invalid response",
                 )
 
-            responses = self.__loads(responses)
+            command_responses = self.__loads(command_responses)
         else:
             try:
                 async for chunk in response.content.iter_any():
@@ -360,16 +361,16 @@ class Connection(BaseConnection):
                 _cleanup()
             return
 
-        if not isinstance(responses, list):
-            yield self.__process_response(responses)
+        if not isinstance(command_responses, list):
+            yield self.__process_response(command_responses)
             return
 
         _LOGGER_DATA.debug(
-            "%s%s->%s", self.__hostname, "(D)" if encrypted else "", responses
+            "%s%s->%s", self.__hostname, "(D)" if encrypted else "", command_responses
         )
 
-        for response in responses:
-            yield self.__process_response(response)
+        for command_response in command_responses:
+            yield self.__process_response(command_response)
 
     def _execute(self, *args: BaseCommandRequest):
         """Internal API"""
