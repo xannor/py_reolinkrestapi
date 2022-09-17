@@ -1,12 +1,11 @@
 """REST Network Mixin"""
 
-from typing import Mapping, Sequence
 from async_reolink.api import network
-from async_reolink.api.led.typings import LightStates, LightingSchedule
-from async_reolink.api.ai.typings import AITypes
-from async_reolink.api.typings import PercentValue
+from async_reolink.api.typings import StreamTypes
 
 from ..commands import network as commands
+
+from .. import security
 
 
 class Network(network.Network):
@@ -26,3 +25,11 @@ class Network(network.Network):
 
     def _create_get_rtsp_urls_request(self, channel_id: int = 0):
         return commands.GetRTSPUrlsRequest(channel_id)
+
+    async def get_rtmp_url(self, channel: int = 0, stream: StreamTypes = ...):
+        url = await super().get_rtmp_url(channel, stream)
+        if isinstance(self, security.Security):
+            token = self._auth_token
+            if token is not None:
+                url += f"&token={token}"
+        return url

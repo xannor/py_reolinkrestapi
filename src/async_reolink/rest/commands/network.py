@@ -107,7 +107,7 @@ class GetNetworkPortsRequest(CommandRequest, network.GetNetworkPortsRequest):
 
 
 class GetNetworkPortsResponse(
-    CommandResponse, network.GetLocalLinkResponse, test="is_response"
+    CommandResponse, network.GetNetworkPortsResponse, test="is_response"
 ):
     """REST Get Local Link Response"""
 
@@ -149,10 +149,13 @@ class GetRTSPUrlsRequest(CommandRequest, network.GetRTSPUrlsRequest):
 
 
 class _RTSPUrls(Mapping[StreamTypes, str]):
-    __slots__ = ("_factory",)
+    __slots__ = ("_value",)
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+    def __init__(self, value: dict) -> None:
+        self._value = value
+
+    def _factory(self):
+        return self._value
 
     def __getitem__(self, __k: StreamTypes) -> str:
         if (value := self._factory()) is None:
