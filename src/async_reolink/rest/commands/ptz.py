@@ -52,9 +52,9 @@ class _DictList(Mapping[int, _T]):
     __slots__ = ("_get_value", "_factory")
 
     def __init__(
-        self, gettter: Callable[[], list], factory: Callable[[Callable[[], dict]], _T]
+        self, getter: Callable[[], list], factory: Callable[[Callable[[], dict]], _T]
     ) -> None:
-        self._get_value = gettter
+        self._get_value = getter
         self._factory = factory
 
     def _get_item(self, __k: int) -> dict:
@@ -535,14 +535,16 @@ class GetZoomFocusRequest(CommandRequestWithChannel, ptz.GetZoomFocusRequest):
 _ZOOMFOCUS_KEY: Final = "ZoomFocus"
 
 
-class GetZoomFocusResponse(CommandResponse, ptz.GetZoomFocusResponse):
+class GetZoomFocusResponse(
+    CommandResponse, ptz.GetZoomFocusResponse, test="is_response"
+):
     """Get Zoom/Focus Response"""
 
     __slots__ = ()
 
     @classmethod
     def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetAutoFocusRequest.COMMAND)
+        return super().is_response(value, GetZoomFocusRequest.COMMAND)
 
     def _get_sub_value(self) -> dict:
         return (

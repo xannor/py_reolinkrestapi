@@ -52,6 +52,10 @@ class MockConnection(Connection, ABC):
             self._logger.info("disconnect fired")
         return
 
+
+class MockConnection_SingleExecute(MockConnection, ABC):
+    """Mocked Single execute response"""
+
     @abstractmethod
     async def _mocked_execute(self, request: CommandRequest) -> CommandResponse | bytes:
         ...

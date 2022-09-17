@@ -13,7 +13,7 @@ from pytest import mark
 from async_reolink.api.commands import CommandRequest
 from async_reolink.rest.commands import CommandResponse
 from async_reolink.rest.system import System
-from .models import MockConnection
+from .models import MockConnection_SingleExecute
 
 _JSON: Final = MappingProxyType(
     {
@@ -22,7 +22,7 @@ _JSON: Final = MappingProxyType(
 )
 
 
-class TestRig(MockConnection, System):
+class TestRig(MockConnection_SingleExecute, System):
     """Test Rig"""
 
     async def _mocked_execute(self, request: CommandRequest):
