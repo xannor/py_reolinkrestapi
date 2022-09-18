@@ -224,7 +224,7 @@ class GetPatrolResponse(CommandResponse, ptz.GetPatrolResponse, test="is_respons
     def channel_id(self) -> int:
         if (_list := self._get_sub_value()) is None:
             return None
-        if (value := next(_list, None)) is None:
+        if (value := next(iter(_list), None)) is None:
             return None
         if TYPE_CHECKING:
             value = cast(dict, value)

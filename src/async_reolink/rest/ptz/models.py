@@ -28,13 +28,18 @@ class ZoomFocus(typings.ZoomFocus):
             value = {}
         self._value = value
 
+    def _get_pos(self, key: str):
+        if (value := self._value.get(key, None)) is None:
+            return 0
+        return value.get("pos", 0)
+
     @property
     def zoom(self) -> int:
-        return self._value.get(_ZOOM_KEY, 0)
+        return self._get_pos(_ZOOM_KEY)
 
     @property
     def focus(self) -> int:
-        return self._value.get(_FOCUS_KEY, 0)
+        return self._get_pos(_FOCUS_KEY)
 
 
 class Preset(typings.Preset):

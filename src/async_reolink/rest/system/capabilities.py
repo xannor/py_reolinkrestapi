@@ -1,6 +1,10 @@
 """System capabilities"""
 
-from typing import Callable, Mapping, TypeVar, overload
+from enum import Flag
+from functools import reduce
+from itertools import chain, combinations
+from types import MappingProxyType
+from typing import Callable, Final, Mapping, TypeVar, overload
 from async_reolink.api.system import capabilities
 
 _T = TypeVar("_T")
@@ -10,6 +14,50 @@ _T = TypeVar("_T")
 
 _defaults: dict[type, any] = {None: 0}
 
+_F = TypeVar("_F", bound=Flag)
+
+
+def _flag_map(__flag_map: dict[int, _F]):
+    def bor(a: _T, b: _T) -> _T:
+        return a | b
+
+    lookup = {_v: _k for _k, _v in __flag_map.items()}
+    values = list(__flag_map.values())
+    for t in chain.from_iterable(
+        combinations(values, i) for i in range(len(values) + 1)
+    ):
+        if len(t) == 0:
+            continue
+        vt = map(lambda f: lookup[f], t)
+        f = reduce(bor, t)
+        v = reduce(bor, vt)
+        __flag_map[v] = f
+
+    return __flag_map
+
+
+def _map_factory(__map: dict[int, _T], __default: _T = None) -> Callable[[int], _T]:
+    if __default is None and 0 in __map:
+        __default = __map[0]
+
+    def _factory(value: int):
+        return __map.get(value, __default)
+
+    _defaults[_factory] = __default
+    return _factory
+
+
+_INT_PERMISSION_MAP: Final = MappingProxyType(
+    _flag_map(
+        {
+            1: capabilities.Permissions.OPTION,
+            2: capabilities.Permissions.WRITE,
+            4: capabilities.Permissions.READ,
+        }
+    )
+)
+_NO_PERMISSIONS: capabilities.Permissions = None
+
 
 class Capability(capabilities.Capability[_T]):
     """Capability"""
@@ -17,12 +65,12 @@ class Capability(capabilities.Capability[_T]):
     __slots__ = ("_factory", "_init")
 
     @overload
-    def __init__(self: "Capability[int]", factory: Callable[[], any] = None):
+    def __init__(self: "Capability[int]", factory: Callable[[], dict] = None):
         ...
 
     @overload
     def __init__(
-        self, factory: Callable[[], dict], __type: Callable[[int], _T]
+        self: "Capability[_T]", factory: Callable[[], dict], __type: Callable[[int], _T]
     ) -> None:
         ...
 
@@ -50,12 +98,14 @@ class Capability(capabilities.Capability[_T]):
         return value
 
     @property
-    def permissions(self) -> capabilities.Permissions:
+    def permissions(self):
         if (value := self._factory()) is None:
-            return 0
-        return value.get("perm", 0)
+            return _NO_PERMISSIONS
+        return _INT_PERMISSION_MAP.get(value.get("permit", 0), _NO_PERMISSIONS)
 
     def __bool__(self):
+        if self.permissions is None:
+            return False
         return bool(self._get_value())
 
     def __index__(self):
@@ -70,10 +120,115 @@ class Capability(capabilities.Capability[_T]):
     def __eq__(self, __o: object) -> bool:
         if hasattr(__o, "__index__"):
             return self._get_value() == __o.__index__()
-        return self._get_value() == __o
+        return self.value == __o
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
+
+_INT_CLOUDSTORAGE: Final = _map_factory(
+    _flag_map(
+        {
+            1 << 0: capabilities.CloudStorage.UPLOAD,
+            1 << 1: capabilities.CloudStorage.CONFIG,
+            1 << 3: capabilities.CloudStorage.DEPLOY,
+        }
+    )
+)
+
+_INT_DAYNIGHT: Final = _map_factory(
+    {1: capabilities.DayNight.DAY_NIGHT, 2: capabilities.DayNight.THRESHOLD}
+)
+
+_INT_DDNS: Final = _map_factory(
+    {
+        1: capabilities.DDns.SWAN,
+        2: capabilities.DDns.THREE322,
+        3: capabilities.DDns.DYNDNS,
+        4: capabilities.DDns.SWAN_3322,
+        5: capabilities.DDns.SWAN_DYNDNS,
+        6: capabilities.DDns.DYNDNS_3322,
+        7: capabilities.DDns.SWAN_DYNDNS_3322,
+        8: capabilities.DDns.NOIP,
+        9: capabilities.DDns.DYNDNS_NOIP,
+    }
+)
+
+_INT_EMAIL: Final = _map_factory(
+    {
+        1: capabilities.Email.JPEG,
+        2: capabilities.Email.VIDEO_JPEG,
+        3: capabilities.Email.VIDEO_JPEG_NICK,
+    }
+)
+
+_INT_ENCODINGTYPE: Final = _map_factory(
+    {0: capabilities.EncodingType.H264, 1: capabilities.EncodingType.H265}
+)
+
+_INT_FLOODLIGHT: Final = _map_factory(
+    {1: capabilities.FloodLight.WHITE, 2: capabilities.FloodLight.AUTO}
+)
+
+_INT_FTP: Final = _map_factory(
+    {
+        1: capabilities.Ftp.STREAM,
+        2: capabilities.Ftp.JPEG_STREAM,
+        3: capabilities.Ftp.MODE,
+        4: capabilities.Ftp.JPEG_STREAM_MODE,
+        5: capabilities.Ftp.STREAM_MODE_TYPE,
+        6: capabilities.Ftp.JPEG_STREAM_MODE_TYPE,
+    }
+)
+
+_INT_LIVE: Final = _map_factory(
+    {1: capabilities.Live.MAIN_EXTERN_SUB, 2: capabilities.Live.MAIN_SUB}
+)
+
+_INT_OSD: Final = _map_factory(
+    {1: capabilities.Osd.SUPPORTED, 2: capabilities.Osd.DISTINCT}
+)
+
+_INT_PTZCONTROL: Final = _map_factory(
+    {1: capabilities.PTZControl.ZOOM, 2: capabilities.PTZControl.ZOOM_FOCUS}
+)
+
+_INT_PTZDIRECTION: Final = _map_factory(
+    {0: capabilities.PTZDirection.EIGHT_AUTO, 1: capabilities.PTZDirection.FOUR_NO_AUTO}
+)
+
+_INT_PTZTYPE: Final = _map_factory(
+    {
+        1: capabilities.PTZType.AF,
+        2: capabilities.PTZType.PTZ,
+        3: capabilities.PTZType.PT,
+        4: capabilities.PTZType.BALL,
+        5: capabilities.PTZType.PTZ_NO_SPEED,
+    }
+)
+
+_INT_RECORDSCHEDULE: Final = _map_factory(
+    {1: capabilities.RecordSchedule.MOTION, 2: capabilities.RecordSchedule.MOTION_LIVE}
+)
+
+_INT_SCHEDULEVERSION: Final = _map_factory(
+    {0: capabilities.ScheduleVersion.BASIC, 1: capabilities.ScheduleVersion.V20}
+)
+
+_INT_TIME: Final = _map_factory(
+    {
+        1: capabilities.Time.SUNDAY,
+        2: capabilities.Time.ANYDAY,
+    }
+)
+
+_INT_UPGRADE: Final = _map_factory(
+    {1: capabilities.Upgrade.MANUAL, 2: capabilities.Upgrade.ONLINE}
+)
+
+_INT_VIDEOCLIP: Final = _map_factory(
+    {1: capabilities.VideoClip.FIXED, 2: capabilities.VideoClip.MOD}
+)
 
 
 class ChannelCapabilities(capabilities.ChannelCapabilities):
@@ -86,7 +241,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
         self._factory = factory
 
     def _keyed_factory(self, key: str):
-        def _factory():
+        def _factory() -> dict:
             if (value := self._factory()) is None:
                 return None
             return value.get(key, None)
@@ -112,7 +267,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
                 self._factory = factory
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -123,6 +278,21 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             def _value(self):
                 return Capability(self._keyed_factory("aiTrack"))
 
+            def __bool__(self):
+                return self._value.__bool__()
+
+            def __index__(self):
+                return self._value.__index__()
+
+            def __int__(self):
+                return self._value.__int__()
+
+            def __str__(self):
+                return self._value.__str__()
+
+            def __eq__(self, __o: object):
+                return self._value.__eq__(__o)
+
             @property
             def value(self):
                 return self._value.value
@@ -130,9 +300,6 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             @property
             def permissions(self):
                 return self._value.permissions
-
-            def __bool__(self):
-                return bool(self.value)
 
             @property
             def pet(self):
@@ -156,7 +323,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -209,11 +376,11 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def floodlight(self):
-        return Capability(self._keyed_factory("floodLight"))
+        return Capability(self._keyed_factory("floodLight"), _INT_FLOODLIGHT)
 
     @property
     def ftp(self):
-        return Capability(self._keyed_factory("ftp"))
+        return Capability(self._keyed_factory("ftp"), _INT_FTP)
 
     @property
     def image(self):
@@ -233,7 +400,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -244,6 +411,21 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
         def _value(self):
             return Capability(self._keyed_factory("isp"))
 
+        def __bool__(self):
+            return self._value.__bool__()
+
+        def __index__(self):
+            return self._value.__index__()
+
+        def __int__(self):
+            return self._value.__int__()
+
+        def __str__(self):
+            return self._value.__str__()
+
+        def __eq__(self, __o: object):
+            return self._value.__eq__(__o)
+
         @property
         def value(self):
             return self._value.value
@@ -251,9 +433,6 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
         @property
         def permissions(self):
             return self._value.permissions
-
-        def __bool__(self):
-            return bool(self.value)
 
         @property
         def threeDnr(self):
@@ -277,7 +456,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
         @property
         def day_night(self):
-            return Capability(self._keyed_factory("ispDayNight"))
+            return Capability(self._keyed_factory("ispDayNight"), _INT_DAYNIGHT)
 
         @property
         def exposure_mode(self):
@@ -317,11 +496,11 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def live(self):
-        return Capability(self._keyed_factory("live"))
+        return Capability(self._keyed_factory("live"), _INT_LIVE)
 
     @property
     def main_encoding(self):
-        return Capability(self._keyed_factory("mainEncType"))
+        return Capability(self._keyed_factory("mainEncType"), _INT_ENCODINGTYPE)
 
     @property
     def mask(self):
@@ -337,7 +516,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -354,7 +533,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
                 self._factory = factory
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -383,7 +562,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def osd(self):
-        return Capability(self._keyed_factory("osd"))
+        return Capability(self._keyed_factory("osd"), _INT_OSD)
 
     @property
     def power_led(self):
@@ -399,7 +578,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -408,11 +587,11 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
         @property
         def control(self):
-            return Capability(self._keyed_factory("ptzCtrl"))
+            return Capability(self._keyed_factory("ptzCtrl"), _INT_PTZCONTROL)
 
         @property
         def direction(self):
-            return Capability(self._keyed_factory("ptzDirection"))
+            return Capability(self._keyed_factory("ptzDirection"), _INT_PTZDIRECTION)
 
         @property
         def patrol(self):
@@ -428,7 +607,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
         @property
         def type(self):
-            return Capability(self._keyed_factory("ptzType"))
+            return Capability(self._keyed_factory("ptzType"), _INT_PTZTYPE)
 
     @property
     def ptz(self):
@@ -444,7 +623,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -465,7 +644,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
         @property
         def schedule(self):
-            return Capability(self._keyed_factory("recSchedule"))
+            return Capability(self._keyed_factory("recSchedule"), _INT_RECORDSCHEDULE)
 
     @property
     def record(self):
@@ -489,7 +668,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -506,7 +685,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
                 self._factory = factory
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -517,6 +696,21 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             def _value(self):
                 return Capability(self._keyed_factory("supportAi"))
 
+            def __bool__(self):
+                return self._value.__bool__()
+
+            def __index__(self):
+                return self._value.__index__()
+
+            def __int__(self):
+                return self._value.__int__()
+
+            def __str__(self):
+                return self._value.__str__()
+
+            def __eq__(self, __o: object):
+                return self._value.__eq__(__o)
+
             @property
             def value(self):
                 return self._value.value
@@ -524,9 +718,6 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
             @property
             def permissions(self):
                 return self._value.permissions
-
-            def __bool__(self):
-                return bool(self.value)
 
             @property
             def animal(self):
@@ -586,7 +777,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
                 self._factory = factory
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -643,7 +834,7 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
     @property
     def video_clip(self):
-        return Capability(self._keyed_factory("videoClip"))
+        return Capability(self._keyed_factory("videoClip"), _INT_VIDEOCLIP)
 
     @property
     def watermark(self):
@@ -702,7 +893,7 @@ class Capabilities(capabilities.Capabilities):
         return self._value
 
     def _keyed_factory(self, key: str):
-        def _factory():
+        def _factory() -> dict:
             return self._value.get(key, None)
 
         return _factory
@@ -726,7 +917,7 @@ class Capabilities(capabilities.Capabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -751,7 +942,7 @@ class Capabilities(capabilities.Capabilities):
                 self._factory = factory
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -788,7 +979,7 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def cloud_storage(self):
-        return Capability(self._keyed_factory("cloudStorage"))
+        return Capability(self._keyed_factory("cloudStorage"), _INT_CLOUDSTORAGE)
 
     @property
     def custom_audio(self):
@@ -800,7 +991,7 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def ddns(self):
-        return Capability(self._keyed_factory("ddns"))
+        return Capability(self._keyed_factory("ddns"), _INT_DDNS)
 
     class Device(capabilities.Capabilities.Device):
         """Device"""
@@ -812,7 +1003,7 @@ class Capabilities(capabilities.Capabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -853,7 +1044,7 @@ class Capabilities(capabilities.Capabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -862,7 +1053,7 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def _value(self):
-            return Capability(self._keyed_factory("email"))
+            return Capability(self._keyed_factory("email"), _INT_EMAIL)
 
         @property
         def value(self):
@@ -905,7 +1096,7 @@ class Capabilities(capabilities.Capabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -926,7 +1117,7 @@ class Capabilities(capabilities.Capabilities):
                 self._factory = factory
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -1041,7 +1232,7 @@ class Capabilities(capabilities.Capabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -1082,7 +1273,7 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def schedule_version(self):
-        return Capability(self._keyed_factory("scheduleVersion"))
+        return Capability(self._keyed_factory("scheduleVersion"), _INT_SCHEDULEVERSION)
 
     @property
     def sd_card(self):
@@ -1124,7 +1315,7 @@ class Capabilities(capabilities.Capabilities):
                     self._factory = factory
 
                 def _keyed_factory(self, key: str):
-                    def _factory():
+                    def _factory() -> dict:
                         if (value := self._factory()) is None:
                             return None
                         return value.get(key, None)
@@ -1187,7 +1378,7 @@ class Capabilities(capabilities.Capabilities):
                     self._factory = factory
 
                 def _keyed_factory(self, key: str):
-                    def _factory():
+                    def _factory() -> dict:
                         if (value := self._factory()) is None:
                             return None
                         return value.get(key, None)
@@ -1214,7 +1405,7 @@ class Capabilities(capabilities.Capabilities):
                     return Capability(self._keyed_factory("supportBuzzerEnable"))
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -1253,7 +1444,7 @@ class Capabilities(capabilities.Capabilities):
                 self._factory = factory
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -1291,7 +1482,7 @@ class Capabilities(capabilities.Capabilities):
                     self._factory = factory
 
                 def _keyed_factory(self, key: str):
-                    def _factory():
+                    def _factory() -> dict:
                         if (value := self._factory()) is None:
                             return None
                         return value.get(key, None)
@@ -1307,7 +1498,7 @@ class Capabilities(capabilities.Capabilities):
                     return Capability(self._keyed_factory("supportFtpCoverVideo"))
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -1336,7 +1527,7 @@ class Capabilities(capabilities.Capabilities):
                     self._factory = factory
 
                 def _keyed_factory(self, key: str):
-                    def _factory():
+                    def _factory() -> dict:
                         if (value := self._factory()) is None:
                             return None
                         return value.get(key, None)
@@ -1369,7 +1560,7 @@ class Capabilities(capabilities.Capabilities):
                     self._factory = factory
 
                 def _keyed_factory(self, key: str):
-                    def _factory():
+                    def _factory() -> dict:
                         if (value := self._factory()) is None:
                             return None
                         return value.get(key, None)
@@ -1396,7 +1587,7 @@ class Capabilities(capabilities.Capabilities):
                     return Capability(self._keyed_factory("supportFtpTaskEnable"))
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -1416,7 +1607,7 @@ class Capabilities(capabilities.Capabilities):
                 return Capability(self._keyed_factory("supportFtpsEncrypt"))
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
@@ -1453,7 +1644,7 @@ class Capabilities(capabilities.Capabilities):
                 self._factory = factory
 
             def _keyed_factory(self, key: str):
-                def _factory():
+                def _factory() -> dict:
                     if (value := self._factory()) is None:
                         return None
                     return value.get(key, None)
@@ -1490,7 +1681,7 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def time(self):
-        return Capability(self._keyed_factory("time"))
+        return Capability(self._keyed_factory("time"), _INT_TIME)
 
     @property
     def tv_system(self):
@@ -1498,7 +1689,7 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def upgrade(self):
-        return Capability(self._keyed_factory("upgrade"))
+        return Capability(self._keyed_factory("upgrade"), _INT_UPGRADE)
 
     @property
     def upnp(self):
@@ -1510,7 +1701,7 @@ class Capabilities(capabilities.Capabilities):
 
     @property
     def video_clip(self):
-        return Capability(self._keyed_factory("videoClip"))
+        return Capability(self._keyed_factory("videoClip"), _INT_VIDEOCLIP)
 
     class Wifi(capabilities.Capabilities.Wifi):
         """WIFI"""
@@ -1522,7 +1713,7 @@ class Capabilities(capabilities.Capabilities):
             self._factory = factory
 
         def _keyed_factory(self, key: str):
-            def _factory():
+            def _factory() -> dict:
                 if (value := self._factory()) is None:
                     return None
                 return value.get(key, None)
