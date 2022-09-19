@@ -38,6 +38,36 @@ class IPInfo(typings.IPInfo):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
 
+class DNSInfo(typings.DNSInfo):
+    """REST DNS Info"""
+
+    __slots__ = ("_factory",)
+
+    def __init__(self, factory: Callable[[], dict]) -> None:
+        self._factory = factory
+
+    @property
+    def auto(self) -> bool:
+        if (value := self._factory()) is None:
+            return 0
+        return value.get("auto", 0)
+
+    @property
+    def dns_1(self) -> bool:
+        if (value := self._factory()) is None:
+            return None
+        return value.get("dns1", None)
+
+    @property
+    def dns_2(self) -> bool:
+        if (value := self._factory()) is None:
+            return None
+        return value.get("dns2", None)
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
+
 class LinkInfo(typings.LinkInfo):
     """REST Link Info"""
 
@@ -68,6 +98,13 @@ class LinkInfo(typings.LinkInfo):
             return self._value.get("static", None)
 
         return IPInfo(_get)
+
+    @property
+    def dns(self):
+        def _get():
+            return self._value.get("dns", None)
+
+        return DNSInfo(_get)
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: {repr(self._value)}>"
@@ -270,4 +307,31 @@ class NetworkPorts(typings.NetworkPorts):
         return NetworkPort("rtmp", self._factory)
 
     def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
+
+class WifiInfo(typings.WifiInfo):
+    """REST Wifi Info"""
+
+    __slots__ = ("_value",)
+
+    def __init__(self, value: dict) -> None:
+        self._value = value
+
+    def _factory(self):
+        return self._value
+
+    @property
+    def ssid(self) -> str:
+        if (value := self._factory()) is None:
+            return None
+        return value.get("ssid", None)
+
+    @property
+    def password(self) -> str:
+        if (value := self._factory()) is None:
+            return None
+        return value.get("password", None)
+
+    def __repr__(self):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"

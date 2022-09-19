@@ -33,3 +33,9 @@ class Network(network.Network):
             if token is not None:
                 url += f"&token={token}"
         return url
+
+    def _create_get_wifi_info_request(self):
+        return commands.GetWifiInfoRequest()
+
+    def _create_get_wifi_signal_request(self):
+        return commands.GetWifiSignalRequest()

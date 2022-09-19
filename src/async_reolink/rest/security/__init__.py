@@ -8,7 +8,12 @@ from async_reolink.api.security import Security as BaseSecurity
 from .. import connection
 
 from ..commands import CommandRequest
-from ..commands.security import LoginRequest, LoginResponse, LogoutRequest
+from ..commands.security import (
+    LoginRequest,
+    LoginResponse,
+    LogoutRequest,
+    GetUserRequest,
+)
 
 
 class Security(BaseSecurity):
@@ -71,9 +76,12 @@ class Security(BaseSecurity):
     def _create_login_request(self, username: str, password: str):
         return LoginRequest(username, password)
 
-    def _create_logout_request(self) -> LogoutRequest:
+    def _create_logout_request(self):
         return LogoutRequest()
 
     def _clear_login(self):
         self.__token = ""
         self.__token_expires = 0
+
+    def _create_get_user_request(self):
+        return GetUserRequest()

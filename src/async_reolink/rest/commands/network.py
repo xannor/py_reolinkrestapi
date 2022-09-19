@@ -1,10 +1,11 @@
 """REST Network Commands"""
 
-from typing import TYPE_CHECKING, Callable, Final, Mapping, TypeGuard, cast
+from typing import TYPE_CHECKING, Callable, Final, Mapping
 from async_reolink.api.commands import network
 
 from async_reolink.api.typings import StreamTypes
 from ..typings import STREAMTYPES_STR_MAP
+from ..models import MinMaxRange
 
 from ..network import models
 
@@ -245,3 +246,104 @@ class GetP2PResponse(CommandResponse, network.GetP2PResponse, test="is_response"
     def info(self):
         # we are not passing the factory here since this object is meant to be detachable
         return models.P2PInfo(self._get_info())
+
+
+class GetWifiInfoRequest(CommandRequest, network.GetWifiInfoRequest):
+    """REST Get Wifi Info Request"""
+
+    __slots__ = ()
+
+    COMMAND: Final = "GetWifi"
+
+    def __init__(
+        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
+    ) -> None:
+        super().__init__()
+        self.command = type(self).COMMAND
+        self.response_type = response_type
+
+
+class GetWifiInfoResponse(
+    CommandResponse, network.GetWifiInfoResponse, test="is_request"
+):
+    """REST Get Wifi Info Response"""
+
+    __slots__ = ()
+
+    @classmethod
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
+        return super().is_response(value, GetWifiInfoRequest.COMMAND)
+
+    def _get_info(self) -> dict:
+        return (
+            value.get("Wifi", None)
+            if (value := self._get_value()) is not None
+            else None
+        )
+
+    @property
+    def info(self):
+        # we are not passing the factory here since this object is meant to be detachable
+        return models.WifiInfo(self._get_info())
+
+
+class GetWifiSignalRequest(CommandRequest, network.GetWifiSignalRequest):
+    """REST Get Signal Strength Request"""
+
+    __slots__ = ()
+
+    COMMAND: Final = "GetWifiSignal"
+
+    def __init__(
+        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
+    ) -> None:
+        super().__init__()
+        self.command = type(self).COMMAND
+        self.response_type = response_type
+
+
+_SIGNAL_KEY: Final = "wifiSignal"
+
+
+class GetWifiSignalResponse(
+    CommandResponse, network.GetWifiSignalResponse, test="is_request"
+):
+    """REST Get Wifi Signal Strength Response"""
+
+    __slots__ = ()
+
+    @classmethod
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
+        return super().is_response(value, GetWifiSignalRequest.COMMAND)
+
+    def _get_info(self, factory: Callable[[], dict]):
+        def _factory() -> dict:
+            return (
+                value.get("WifiSignal", None)
+                if (value := factory()) is not None
+                else None
+            )
+
+        return _factory
+
+    @property
+    def signal(self) -> int:
+        if (value := self._get_value()) is None:
+            return 0
+        return value.get(_SIGNAL_KEY, 0)
+
+    @property
+    def initial_signal(self) -> int | None:
+        if (value := self._get_initial()) is None:
+            return None
+        return value.get(_SIGNAL_KEY, 0)
+
+    @property
+    def signal_range(self):
+        if (value := self._get_range()) is None:
+            return None
+
+        def _factory():
+            return value
+
+        return MinMaxRange("", _factory)

@@ -34,3 +34,6 @@ class System(system.System):
 
     def _create_reboot_request(self):
         return commands.RebootRequest()
+
+    def _create_get_hdd_info_request(self):
+        return commands.GetHddInfoRequest()

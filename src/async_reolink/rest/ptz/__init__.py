@@ -26,20 +26,20 @@ class PTZ(ptz.PTZ):
     def _create_get_ptz_patrols_request(self, channel: int):
         return commands.GetPatrolRequest(channel)
 
-    def _create_set_ptz_patrol_request(self, patrol: Patrol):
-        return commands.SetPatrolRequest(patrol)
+    def _create_set_ptz_patrol_request(self, channel_id: int, patrol: Patrol):
+        return commands.SetPatrolRequest(patrol, channel_id)
 
     def _create_get_ptz_presets_request(self, channel: int):
         return commands.GetPresetRequest(channel)
 
-    def _create_set_ptz_preset_request(self, preset: Preset):
-        return commands.SetPresetRequest(preset)
+    def _create_set_ptz_preset_request(self, channel_id: int, preset: Preset):
+        return commands.SetPresetRequest(preset, channel_id)
 
     def _create_get_ptz_tatterns_request(self, channel: int):
         return commands.GetTatternRequest(channel)
 
-    def _create_set_ptz_tatterns_request(self, channel: int, *track: Track):
-        return commands.SetTatternRequest(*track, channel_id=channel)
+    def _create_set_ptz_tatterns_request(self, channel_id: int, *track: Track):
+        return commands.SetTatternRequest(*track, channel_id=channel_id)
 
     def _create_get_ptz_zoom_focus_request(self, channel: int):
         return commands.GetZoomFocusRequest(channel)

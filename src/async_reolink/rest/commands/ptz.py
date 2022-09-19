@@ -4,16 +4,16 @@ from typing import (
     TYPE_CHECKING,
     Callable,
     Final,
-    Generator,
     Iterable,
-    Mapping,
     MutableSequence,
-    TypeGuard,
-    TypeVar,
     cast,
 )
 from async_reolink.api.commands import ptz
 from async_reolink.api.ptz import typings
+
+from .._utilities.dictlist import DictList
+
+from ..models import MinMaxRange, StringRange
 
 from ..ptz.typings import (
     OPERATION_STR_MAP,
@@ -45,53 +45,6 @@ from . import (
 
 # pylint:disable=missing-function-docstring
 
-_T = TypeVar("_T")
-
-
-class _DictList(Mapping[int, _T]):
-    __slots__ = ("_get_value", "_factory")
-
-    def __init__(
-        self, getter: Callable[[], list], factory: Callable[[Callable[[], dict]], _T]
-    ) -> None:
-        self._get_value = getter
-        self._factory = factory
-
-    def _get_item(self, __k: int) -> dict:
-        return (
-            next(
-                (
-                    _d
-                    for _d in value
-                    if isinstance(_d, dict) and _d.get(_ID_KEY, None) == __k
-                ),
-                None,
-            )
-            if (value := self._get_value()) is not None
-            else None
-        )
-
-    def __getitem__(self, __k: int):
-        def _factory():
-            return self._get_item(__k)
-
-        return self._factory(_factory)
-
-    def __iter__(self) -> Generator[int, None, None]:
-        if (value := self._get_value()) is None:
-            return
-        for _d in value:
-            if isinstance(_d, dict) and (__k := _d.get(_ID_KEY, None)) is not None:
-                yield __k
-
-    def __contains__(self, __o: int):
-        return self._get_item(__o) is not None
-
-    def __len__(self) -> int:
-        if (value := self._get_value()) is None:
-            return 0
-        return len(value)
-
 
 class GetPresetRequest(CommandRequestWithChannel, ptz.GetPresetRequest):
     """REST Get Presets Request"""
@@ -114,6 +67,32 @@ class GetPresetRequest(CommandRequestWithChannel, ptz.GetPresetRequest):
 _PRESET_KEY: Final = "PtzPreset"
 
 
+class _PresetRange:
+    __slots__ = ("_value",)
+
+    def __init__(self, value: dict) -> None:
+        self._value = value
+
+    def _factory(self):
+        return self._value
+
+    def _keyed_factory(self, key: str):
+        def _factory() -> dict:
+            return (
+                value.get(key, None) if (value := self._factory()) is not None else None
+            )
+
+        return _factory
+
+    @property
+    def id(self):
+        return MinMaxRange("", self._keyed_factory("id"))
+
+    @property
+    def name(self):
+        return StringRange(self._keyed_factory("name"))
+
+
 class GetPresetResponse(CommandResponse, ptz.GetPresetResponse, test="is_response"):
     """Get Presets Response"""
 
@@ -123,18 +102,16 @@ class GetPresetResponse(CommandResponse, ptz.GetPresetResponse, test="is_respons
     def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetPresetRequest.COMMAND)
 
-    def _get_sub_value(self) -> list:
+    def _get_sub_value(self, factory: Callable[[], dict]) -> list:
         return (
-            value.get(_PRESET_KEY, None)
-            if (value := self._get_value()) is not None
-            else None
+            value.get(_PRESET_KEY, None) if (value := factory()) is not None else None
         )
 
     @property
     def channel_id(self) -> int:
-        if (_list := self._get_sub_value()) is None:
+        if (_list := self._get_sub_value(self._get_value)) is None:
             return None
-        if (value := next(_list, None)) is None:
+        if (value := next(iter(_list), None)) is None:
             return None
         if TYPE_CHECKING:
             value = cast(dict, value)
@@ -142,7 +119,17 @@ class GetPresetResponse(CommandResponse, ptz.GetPresetResponse, test="is_respons
 
     @property
     def presets(self):
-        return _DictList(self._get_sub_value, Preset)
+        return DictList(_ID_KEY, self._get_sub_value(self._get_value), Preset)
+
+    @property
+    def initial_presets(self):
+        return DictList(_ID_KEY, self._get_sub_value(self._get_initial), Preset)
+
+    @property
+    def presets_range(self):
+        if (value := self._get_range()) is not None:
+            value = value.get(_PRESET_KEY)
+        return _PresetRange(value)
 
 
 class SetPresetRequest(CommandRequest, ptz.SetPresetRequest):
@@ -155,11 +142,13 @@ class SetPresetRequest(CommandRequest, ptz.SetPresetRequest):
     def __init__(
         self,
         preset: typings.Preset = None,
+        channel_id: int = 0,
         response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
+        self.channel_id = channel_id
         if preset is not None:
             self.preset = preset
 
@@ -170,6 +159,20 @@ class SetPresetRequest(CommandRequest, ptz.SetPresetRequest):
         if _key in parameter or not create:
             return parameter.get(_key, None)
         return parameter.setdefault(_key, {})
+
+    @property
+    def _sub_value(self):
+        return self._get_sub_value(True)
+
+    @property
+    def channel_id(self) -> int:
+        if (value := self._get_sub_value()) is None:
+            return 0
+        return value.get(_CHANNEL_KEY, 0)
+
+    @channel_id.setter
+    def channel_id(self, value):
+        self._sub_value[_CHANNEL_KEY] = value
 
     @property
     def preset(self):
@@ -204,6 +207,63 @@ class GetPatrolRequest(CommandRequestWithChannel, ptz.GetPatrolRequest):
         self.channel_id = channel_id
 
 
+class _PatrolPresetRange:
+    __slots__ = ("_factory",)
+
+    def __init__(self, factory: Callable[[], dict]) -> None:
+        self._factory = factory
+
+    def _keyed_factory(self, key: str):
+        def _factory() -> dict:
+            return (
+                value.get(key, None) if (value := self._factory()) is not None else None
+            )
+
+        return _factory
+
+    @property
+    def id(self):
+        return MinMaxRange("", self._keyed_factory("id"))
+
+    @property
+    def dwell_time(self):
+        return MinMaxRange("", self._keyed_factory("dwellTime"))
+
+    @property
+    def speed(self):
+        return MinMaxRange("", self._keyed_factory("speed"))
+
+
+class _PatrolRange:
+    __slots__ = ("_value",)
+
+    def __init__(self, value: dict) -> None:
+        self._value = value
+
+    def _factory(self):
+        return self._value
+
+    def _keyed_factory(self, key: str):
+        def _factory() -> dict:
+            return (
+                value.get(key, None) if (value := self._factory()) is not None else None
+            )
+
+        return _factory
+
+    @property
+    def id(self):
+        return MinMaxRange("", self._keyed_factory("id"))
+
+    @property
+    def name(self):
+        return StringRange(self._keyed_factory("name"))
+
+    @property
+    def preset(self):
+        return _PatrolPresetRange(self._keyed_factory("preset"))
+
+
 class GetPatrolResponse(CommandResponse, ptz.GetPatrolResponse, test="is_response"):
     """Get Patrol Response"""
 
@@ -213,26 +273,26 @@ class GetPatrolResponse(CommandResponse, ptz.GetPatrolResponse, test="is_respons
     def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetPatrolRequest.COMMAND)
 
-    def _get_sub_value(self) -> list:
+    def _get_sub_value(self, factory: Callable[[], dict]) -> list:
         return (
-            value.get(_PATROL_KEY, None)
-            if (value := self._get_value()) is not None
-            else None
+            value.get(_PATROL_KEY, None) if (value := factory()) is not None else None
         )
 
-    @property
-    def channel_id(self) -> int:
-        if (_list := self._get_sub_value()) is None:
-            return None
-        if (value := next(iter(_list), None)) is None:
-            return None
-        if TYPE_CHECKING:
-            value = cast(dict, value)
-        return value.get(_CHANNEL_KEY, None)
+    channel_id = GetPresetResponse.channel_id
 
     @property
     def patrols(self):
-        return _DictList(self._get_sub_value, Patrol)
+        return DictList(_ID_KEY, self._get_sub_value(self._get_value), Patrol)
+
+    @property
+    def initial_presets(self):
+        return DictList(_ID_KEY, self._get_sub_value(self._get_initial), Patrol)
+
+    @property
+    def presets_range(self):
+        if (value := self._get_range()) is not None:
+            value = value.get(_PRESET_KEY)
+        return _PatrolRange(value)
 
 
 class SetPatrolRequest(CommandRequest, ptz.SetPatrolRequest):
@@ -245,11 +305,13 @@ class SetPatrolRequest(CommandRequest, ptz.SetPatrolRequest):
     def __init__(
         self,
         patrol: typings.Patrol = None,
+        channel_id: int = 0,
         response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
+        self.channel_id = channel_id
         if patrol is not None:
             self.patrol = patrol
 
@@ -260,6 +322,10 @@ class SetPatrolRequest(CommandRequest, ptz.SetPatrolRequest):
         if _key in parameter or not create:
             return parameter.get(_key, None)
         return parameter.setdefault(_key, {})
+
+    _sub_value = SetPresetRequest._sub_value
+
+    channel_id = SetPresetRequest.channel_id
 
     @property
     def patrol(self):
@@ -294,6 +360,51 @@ class GetTatternRequest(CommandRequestWithChannel, ptz.GetTatternRequest):
         self.channel_id = channel_id
 
 
+class _TrackRange:
+    __slots__ = ("_factory",)
+
+    def __init__(self, factory: Callable[[], dict]) -> None:
+        self._factory = factory
+
+    def _keyed_factory(self, key: str):
+        def _factory() -> dict:
+            return (
+                value.get(key, None) if (value := self._factory()) is not None else None
+            )
+
+        return _factory
+
+    @property
+    def id(self):
+        return MinMaxRange("", self._keyed_factory("id"))
+
+    @property
+    def name(self):
+        return StringRange(self._keyed_factory("name"))
+
+
+class _TracksRange:
+    __slots__ = ("_value",)
+
+    def __init__(self, value: dict) -> None:
+        self._value = value
+
+    def _factory(self):
+        return self._value
+
+    def _keyed_factory(self, key: str):
+        def _factory() -> dict:
+            return (
+                value.get(key, None) if (value := self._factory()) is not None else None
+            )
+
+        return _factory
+
+    @property
+    def track(self):
+        return _TrackRange(self._keyed_factory("track"))
+
+
 class GetTatternResponse(CommandResponse, ptz.GetTatternResponse):
     """Get Tattern Response"""
 
@@ -303,12 +414,17 @@ class GetTatternResponse(CommandResponse, ptz.GetTatternResponse):
     def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetTatternRequest.COMMAND)
 
-    def _get_sub_value(self) -> list:
+    def _get_sub_value(self) -> dict:
         return (
             value.get(_TATTERN_KEY, None)
             if (value := self._get_value()) is not None
             else None
         )
+
+    def _get_tracks(self) -> list:
+        if (value := self._get_sub_value()) is None:
+            return None
+        return value.get("track", None)
 
     @property
     def channel_id(self) -> int:
@@ -320,7 +436,17 @@ class GetTatternResponse(CommandResponse, ptz.GetTatternResponse):
 
     @property
     def tracks(self):
-        return _DictList(self._get_sub_value, Track)
+        return DictList(_ID_KEY, self._get_tracks, Track)
+
+    @property
+    def initial_tracks(self):
+        return DictList(_ID_KEY, self._get_tracks, Track)
+
+    @property
+    def presets_range(self):
+        if (value := self._get_range()) is not None:
+            value = value.get(_TATTERN_KEY)
+        return _TracksRange(value)
 
 
 class _MutableTracks(MutableSequence[MutableTrack]):
@@ -400,24 +526,24 @@ class SetTatternRequest(CommandRequest, ptz.SetTatternRequest):
         return parameter.setdefault(_key, {})
 
     @property
-    def _tattern(self):
+    def _sub_value(self):
         return self._get_sub_value(True)
 
     @GetTatternRequest.channel_id.setter
     def channel_id(self, value):
-        self._tattern[_CHANNEL_KEY] = value
+        self._sub_value[_CHANNEL_KEY] = value
+
+    def _get_tracks(self, create=False) -> list:
+        _key: Final = "track"
+        if (value := self._get_sub_value(create)) is None:
+            return None
+        if _key in value or not create:
+            return value.get(_key, None)
+        return value.setdefault(_key, [])
 
     @property
     def tracks(self):
-        def _factory(create=False):
-            _key: Final = "track"
-            if (value := self._get_sub_value(create)) is None:
-                return None
-            if _key in value or not create:
-                return value.get(_key, None)
-            return value.setdefault(_key, [])
-
-        return _MutableTracks(_factory)
+        return _MutableTracks(self._get_tracks)
 
     @tracks.setter
     def tracks(self, value: Iterable[typings.Track]):
@@ -535,6 +661,45 @@ class GetZoomFocusRequest(CommandRequestWithChannel, ptz.GetZoomFocusRequest):
 _ZOOMFOCUS_KEY: Final = "ZoomFocus"
 
 
+class _ZoomFocusRange:
+    __slots__ = ("_value",)
+
+    def __init__(self, value: dict) -> None:
+        self._value = value
+
+    def _factory(self):
+        return self._value
+
+    def _keyed_factory(self, key: str):
+        def _factory() -> dict:
+            return (
+                value.get(key, None) if (value := self._factory()) is not None else None
+            )
+
+        return _factory
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
+    def _pos_keyed_factory(self, key: str):
+        __factory = self._keyed_factory(key)
+
+        def _factory() -> dict:
+            return (
+                value.get("pos", None) if (value := __factory()) is not None else None
+            )
+
+        return _factory
+
+    @property
+    def zoom(self):
+        return MinMaxRange("", self._pos_keyed_factory("zoom"))
+
+    @property
+    def focus(self):
+        return MinMaxRange("", self._pos_keyed_factory("focus"))
+
+
 class GetZoomFocusResponse(
     CommandResponse, ptz.GetZoomFocusResponse, test="is_response"
 ):
@@ -546,10 +711,12 @@ class GetZoomFocusResponse(
     def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetZoomFocusRequest.COMMAND)
 
-    def _get_sub_value(self) -> dict:
+    def _get_sub_value(self, factory: Callable[[], dict] = None):
+        if factory is None:
+            factory = self._get_value
         return (
             value.get(_ZOOMFOCUS_KEY, None)
-            if (value := self._get_value()) is not None
+            if (value := factory()) is not None
             else None
         )
 
@@ -558,6 +725,14 @@ class GetZoomFocusResponse(
     @property
     def state(self):
         return ZoomFocus(self._get_sub_value())
+
+    @property
+    def inital_state(self):
+        return ZoomFocus(self._get_sub_value(self._get_initial))
+
+    @property
+    def state_range(self):
+        return _ZoomFocusRange(self._get_sub_value(self._get_range))
 
 
 _DEFAULT_ZOOMOPERATION: Final = typings.ZoomOperation.ZOOM

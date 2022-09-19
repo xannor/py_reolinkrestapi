@@ -1,9 +1,11 @@
 """System REST Commands"""
 
-from typing import Final, TypeGuard
+from typing import Final
 from async_reolink.api.commands import system
 
-from ..system.models import DaylightSavingsTimeInfo, DeviceInfo, TimeInfo
+from .._utilities.dictlist import DictList
+
+from ..system.models import DaylightSavingsTimeInfo, DeviceInfo, TimeInfo, StorageInfo
 
 from ..commands import (
     CommandRequest,
@@ -19,6 +21,8 @@ from ..system.capabilities import Capabilities
 
 class GetAbilitiesRequest(CommandRequest, system.GetAbilitiesRequest):
     """REST Get Capabilities Request"""
+
+    __slots__ = ()
 
     COMMAND: Final = "GetAbility"
 
@@ -60,6 +64,8 @@ class GetAbilitiesResponse(
 ):
     """REST Get Capability Response"""
 
+    __slots__ = ()
+
     @classmethod
     def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetAbilitiesRequest.COMMAND)
@@ -95,6 +101,8 @@ class GetDeviceInfoResponse(
 ):
     """REST Get Device Info Response"""
 
+    __slots__ = ()
+
     @classmethod
     def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetDeviceInfoRequest.COMMAND)
@@ -129,6 +137,8 @@ class GetTimeRequest(CommandRequest, system.GetTimeRequest):
 class GetTimeResponse(CommandResponse, system.GetTimeResponse, test="is_response"):
     """REST Get Time Response"""
 
+    __slots__ = ()
+
     @classmethod
     def is_response(cls, value: any, /):  # pylint: disable=signature-differs
         return super().is_response(value, GetTimeRequest.COMMAND)
@@ -157,6 +167,8 @@ class GetTimeResponse(CommandResponse, system.GetTimeResponse, test="is_response
 class RebootRequest(CommandRequest, system.RebootRequest):
     """REST Reboot Request"""
 
+    __slots__ = ()
+
     COMMAND: Final = "Reboot"
 
     def __init__(
@@ -165,3 +177,41 @@ class RebootRequest(CommandRequest, system.RebootRequest):
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
+
+
+class GetHddInfoRequest(CommandRequest, system.GetHddInfoRequest):
+    """REST Get HDD Info Request"""
+
+    __slots__ = ()
+
+    COMMAND: Final = "GetHddInfo"
+
+    def __init__(
+        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
+    ) -> None:
+        super().__init__()
+        self.command = type(self).COMMAND
+        self.response_type = response_type
+
+
+class GetGddInfoResponse(
+    CommandResponse, system.GetHddInfoResponse, test="is_response"
+):
+    """REST Get HDD Info Response"""
+
+    __slots__ = ()
+
+    @classmethod
+    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
+        return super().is_response(value, GetHddInfoRequest.COMMAND)
+
+    def _get_info(self) -> list:
+        return (
+            value.get("HddInfo", None)
+            if (value := self._get_value()) is not None
+            else None
+        )
+
+    @property
+    def info(self):
+        return DictList("number", self._get_info(), StorageInfo)

@@ -22,28 +22,3 @@ class FactoryValue(Protocol[_T]):
 
     def __call__(self, create=False) -> _T:
         ...
-
-
-_VT = TypeVar("_VT")
-
-
-class Property(Protocol[_T, _VT]):
-    """Property Protocol"""
-
-    fget: Callable[[_T], _VT]
-    fset: Callable[[_T, _VT], None] | None
-    fdel: Callable[[_T], None]
-
-    @overload
-    def __get__(self, obj: None, cls: type) -> Self:
-        ...
-
-    @overload
-    def _get__(self, obj: _T, cls: type) -> _VT:
-        ...
-
-    def __get__(self, obj, cls) -> _T:
-        ...
-
-    def __set__(self, obj, value) -> None:
-        ...

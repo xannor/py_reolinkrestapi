@@ -4,7 +4,10 @@
 # pylint: disable=too-few-public-methods
 # pylint:disable=missing-function-docstring
 
-from typing import Callable
+from typing import Callable, Final
+
+from async_reolink.api.security import typings
+from .typings import _LEVELTYPE_STR_MAP, _STR_LEVELTYPE_MAP
 
 
 class LoginToken:
@@ -109,3 +112,30 @@ class DigestInfo:
         if (value := self._factory()) is None:
             return ""
         return value.get("UserName", "")
+
+
+_DEFAULT_LEVELTYPE: Final = typings.LevelTypes.GUEST
+_DEFUALT_LEVELTYPE_STR: Final = _LEVELTYPE_STR_MAP[_DEFAULT_LEVELTYPE]
+
+
+class UserInfo(typings.UserInfo):
+    """REST User Record"""
+
+    __slots__ = ("_factory",)
+
+    def __init__(self, factory: Callable[[], dict]) -> None:
+        self._factory = factory
+
+    @property
+    def user_name(self) -> str:
+        if (value := self._factory()) is None:
+            return None
+        return value.get("userName", None)
+
+    @property
+    def level(self):
+        if (value := self._factory()) is None:
+            return _DEFAULT_LEVELTYPE
+        return _STR_LEVELTYPE_MAP.get(
+            value.get("level", _DEFUALT_LEVELTYPE_STR), _DEFAULT_LEVELTYPE
+        )

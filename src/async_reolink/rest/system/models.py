@@ -1,8 +1,10 @@
 """System models"""
 
-from typing import Callable, TypeVar
+from typing import Callable, Final, TypeVar
 from async_reolink.api.commands import system
 from async_reolink.api.system import typings
+from async_reolink.api.typings import WeekDays
+from .typings import _INT_WEEKDAY_MAP, _INT_STORAGETYPE_MAP
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=too-few-public-methods
@@ -193,103 +195,52 @@ class DaylightSavingsTimeInfo(system.DaylightSavingsTimeInfo):
             return 0
         return value.get("offset", 0)
 
-    class StartDateTime(system.DaylightSavingsTimeInfo.TimeInfo):
-        """Start Time"""
+    class TimeInfo(system.DaylightSavingsTimeInfo.TimeInfo):
+        """Time Info"""
 
-        __slots__ = ("_factory",)
+        __slots__ = ("_factory", "_prefix")
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
+        def __init__(self, factory: Callable[[], dict], prefix: str):
             super().__init__()
             self._factory = factory
+            self._prefix = prefix
 
-        @property
-        def month(self):
+        def _get_value(self, key: str) -> int:
             if (value := self._factory()) is None:
                 return 0
-            return value.get("startMon", 0)
+            return value.get(self._prefix + key, 0)
 
         @property
         def hour(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("startHour", 0)
+            return self._get_value("Hour")
 
         @property
         def minute(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("startMin", 0)
+            return self._get_value("Min")
 
         @property
-        def second(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("startSec", 0)
+        def month(self):
+            return self._get_value("Mon")
 
         @property
         def week(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("startWeek", 0)
+            return self._get_value("Week")
 
         @property
         def weekday(self):
             if (value := self._factory()) is None:
-                return 0
-            return value.get("startWeekday", 0)
+                return WeekDays.SUNDAY
+            return _INT_WEEKDAY_MAP.get(
+                value.get(self._prefix + "Weekday", 0), WeekDays.SUNDAY
+            )
 
     @property
     def start(self):
-        return type(self).StartDateTime(self._factory)
-
-    class EndDateTime(system.DaylightSavingsTimeInfo.TimeInfo):
-        """End Time"""
-
-        __slots__ = ("_factory",)
-
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
-
-        @property
-        def month(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("endMon", 0)
-
-        @property
-        def hour(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("endHour", 0)
-
-        @property
-        def minute(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("endMin", 0)
-
-        @property
-        def second(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("endSec", 0)
-
-        @property
-        def week(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("endWeek", 0)
-
-        @property
-        def weekday(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get("endWeekday", 0)
+        return type(self).TimeInfo(self._factory, "start")
 
     @property
     def end(self):
-        return type(self).EndDateTime(self._factory)
+        return type(self).TimeInfo(self._factory, "end")
 
 
 class TimeInfo(system.TimeInfo):
@@ -354,3 +305,54 @@ class TimeInfo(system.TimeInfo):
         if (value := self._factory()) is None:
             return 0
         return value.get("timeZone", 0)
+
+
+_DEFAULT_STORAGETYPE: Final[typings.StorageTypes] = None
+
+
+class StorageInfo(typings.StorageInfo):
+    """REST Storage Info"""
+
+    __slots__ = ("_factory",)
+
+    def __init__(self, factory: Callable[[], dict]) -> None:
+        super().__init__()
+        self._factory = factory
+
+    @property
+    def id(self) -> bool:
+        if (value := self._factory()) is None:
+            return 0
+        return value.get("number", 0)
+
+    @property
+    def capacity(self) -> int:
+        if (value := self._factory()) is None:
+            return 0
+        return value.get("capacity", 0)
+
+    @property
+    def formatted(self) -> bool:
+        if (value := self._factory()) is None:
+            return 0
+        return value.get("format", 0)
+
+    @property
+    def mounted(self) -> bool:
+        if (value := self._factory()) is None:
+            return 0
+        return value.get("mount", 0)
+
+    @property
+    def free_space(self) -> bool:
+        if (value := self._factory()) is None:
+            return 0
+        return value.get("size", 0)
+
+    @property
+    def type(self):
+        if (value := self._factory()) is None:
+            return _DEFAULT_STORAGETYPE
+        return _INT_STORAGETYPE_MAP.get(
+            value.get("storageType", 0), _DEFAULT_STORAGETYPE
+        )

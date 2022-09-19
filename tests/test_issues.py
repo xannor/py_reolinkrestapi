@@ -53,7 +53,7 @@ async def test_int5():
             continue
         elif isinstance(response, system.system.GetDeviceInfoResponse):
             continue
-        elif isinstance(response, network.network.GetNetworkPortsResponse):
+        elif isinstance(response, network.commands.network.GetNetworkPortsResponse):
             continue
         elif isinstance(response, alarm.alarm.GetMotionStateResponse):
             continue
@@ -95,15 +95,15 @@ async def test_int9():
             info = response.info
             assert info.name == "Frente"
             continue
-        elif isinstance(response, network.network.GetNetworkPortsResponse):
+        elif isinstance(response, network.commands.network.GetNetworkPortsResponse):
             ports = response.ports
             assert ports.http.enabled
             continue
-        elif isinstance(response, network.network.GetLocalLinkResponse):
+        elif isinstance(response, network.commands.network.GetLocalLinkResponse):
             local_link = response.local_link
             assert local_link.type == LinkTypes.DHCP
             continue
-        elif isinstance(response, network.network.GetP2PResponse):
+        elif isinstance(response, network.commands.network.GetP2PResponse):
             info = response.info
             assert info.uid
             continue

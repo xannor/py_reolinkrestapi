@@ -139,6 +139,10 @@ class CommandResponse(commands.CommandResponse, ABC):
         return self._response
 
     @property
+    def is_detailed(self):
+        return self._get_initial() is not None or self._get_range() is not None
+
+    @property
     def command(self) -> str:
         return self._response.get(_COMMAND_KEY, "")
 
