@@ -2,18 +2,19 @@
 
 from typing import Final, TypeGuard
 
-from async_reolink.api.commands import led
-from async_reolink.api.led import typings
+from async_reolink.api.led import command as led
+from async_reolink.api.connection.typing import CommandResponse
+from async_reolink.api.led import typing
 
-from ..led.typings import LIGHTSTATES_STR_MAP, STR_LIGHTSTATES_MAP
-from ..led.models import MutableWhiteLedInfo, WhiteLedInfo
+from .typing import LIGHTSTATES_STR_MAP, STR_LIGHTSTATES_MAP
+from .models import MutableWhiteLedInfo, WhiteLedInfo
 
-from . import (
+from ..connection.models import (
     _CHANNEL_KEY,
     CommandRequest,
     CommandRequestWithChannel,
     CommandResponseTypes,
-    CommandResponse,
+    CommandResponse as RestCommandResponse,
 )
 
 # pylint:disable=missing-function-docstring
@@ -39,11 +40,13 @@ class GetIrLightsRequest(CommandRequestWithChannel, led.GetIrLightsRequest):
 
 _IR_LIGHTS_KEY = "IrLights"
 
-_DEFAULT_LIGHTSTATE: Final = typings.LightStates.OFF
+_DEFAULT_LIGHTSTATE: Final = typing.LightStates.OFF
 _DEFAULT_LIGHTSTATE_STR: Final = LIGHTSTATES_STR_MAP[_DEFAULT_LIGHTSTATE]
 
 
-class GetIrLightsResponse(CommandResponse, led.GetIrLightsResponse, test="is_response"):
+class GetIrLightsResponse(
+    RestCommandResponse, led.GetIrLightsResponse, test="is_response"
+):
     """REST Get IR Lights Response"""
 
     __slots__ = ()
@@ -68,7 +71,7 @@ class GetIrLightsResponse(CommandResponse, led.GetIrLightsResponse, test="is_res
         )
 
     @property
-    def state(self) -> typings.LightStates:
+    def state(self) -> typing.LightStates:
         return (
             STR_LIGHTSTATES_MAP[value.get("state", _DEFAULT_LIGHTSTATE_STR)]
             if (value := self._get_lights()) is not None
@@ -85,7 +88,7 @@ class SetIrLightsRequest(CommandRequest, led.SetIrLightsRequest):
 
     def __init__(
         self,
-        state: typings.LightStates,
+        state: typing.LightStates,
         channel_id: int = 0,
         response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
     ):
@@ -137,7 +140,9 @@ class GetPowerLedRequest(CommandRequest, led.GetPowerLedRequest):
 _POWER_LED_KEY = "PowerLed"
 
 
-class GetPowerLedResponse(CommandResponse, led.GetPowerLedResponse, test="is_response"):
+class GetPowerLedResponse(
+    RestCommandResponse, led.GetPowerLedResponse, test="is_response"
+):
     """REST Get Power LED Response"""
 
     __slots__ = ()
@@ -166,7 +171,7 @@ class SetPowerLedRequest(CommandRequest, led.SetPowerLedRequest):
 
     def __init__(
         self,
-        state: typings.LightStates,
+        state: typing.LightStates,
         channel_id: int = 0,
         response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
     ):
@@ -210,7 +215,9 @@ class GetWhiteLedRequest(CommandRequestWithChannel, led.GetWhiteLedRequest):
 _WHITE_LED_KEY = "WhiteLed"
 
 
-class GetWhiteLedResponse(CommandResponse, led.GetWhiteLedResponse, test="is_response"):
+class GetWhiteLedResponse(
+    RestCommandResponse, led.GetWhiteLedResponse, test="is_response"
+):
     """REST Get White LED Response"""
 
     __slots__ = ()
@@ -269,3 +276,54 @@ class SetWhiteLedRequest(CommandRequest, led.SetWhiteLedRequest):
     @property
     def info(self):
         return MutableWhiteLedInfo(self._get_lights)
+
+
+class CommandFactory(led.CommandFactory):
+    """REST LED Command Factory"""
+
+    def create_get_ir_lights_request(self, channel_id: int):
+        return GetIrLightsRequest(channel_id)
+
+    def is_get_ir_lights_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetIrLightsResponse]:
+        return isinstance(response, GetIrLightsResponse)
+
+    def create_set_ir_lights_request(self, state: typing.LightStates, channel_id: int):
+        return SetIrLightsRequest(state, channel_id)
+
+    def create_get_power_led_request(self, channel_id: int):
+        return GetPowerLedRequest(channel_id)
+
+    def is_get_power_led_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetPowerLedResponse]:
+        return isinstance(response, GetPowerLedResponse)
+
+    def create_set_power_led_request(self, state: typing.LightStates, channel_id: int):
+        return SetPowerLedRequest(state, channel_id)
+
+    def create_get_white_led_request(self, channel_id: int):
+        return GetWhiteLedRequest(channel_id)
+
+    def is_get_white_led_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetWhiteLedResponse]:
+        return isinstance(response, GetWhiteLedResponse)
+
+    def create_set_white_led_request(
+        self,
+        info: typing.WhiteLedInfo,
+        channel_id: int,
+    ):
+        request = SetWhiteLedRequest(channel_id)
+        request.info.state = info.state
+        if info.brightness is not None:
+            request.info.brightness = info.brightness
+        if info.brightness_state is not None:
+            request.info.brightness_state = info.brightness_state
+        if info.lighting_schedule is not None:
+            request.info.lighting_schedule = info.lighting_schedule
+        if info.ai_detection_type is not None:
+            request.info.ai_detection_type = info.ai_detection_type
+        return request

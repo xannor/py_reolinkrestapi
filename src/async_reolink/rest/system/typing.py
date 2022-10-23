@@ -4,8 +4,8 @@
 from types import MappingProxyType
 from typing import Final
 
-from async_reolink.api.typings import WeekDays
-from async_reolink.api.system.typings import StorageTypes
+from async_reolink.api.typing import WeekDays
+from async_reolink.api.system.typing import StorageTypes
 
 _INT_WEEKDAY_MAP: Final = MappingProxyType(
     {(int(_e.value) + 1) % 7: _e for _e in WeekDays}

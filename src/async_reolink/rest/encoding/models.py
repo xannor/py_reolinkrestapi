@@ -1,15 +1,15 @@
 """Encoding REST models"""
 
 from typing import Callable, Mapping
-from async_reolink.api.typings import StreamTypes
-from async_reolink.api.encoding import typings
+from async_reolink.api.typing import StreamTypes
+from async_reolink.api.encoding import typing
 
-from .typings import STREAMTYPES_STR_MAP
+from .typing import STREAMTYPES_STR_MAP
 
 # pylint:disable=missing-function-docstring
 
 
-class StreamEncodingInfo(typings.StreamEncodingInfo):
+class StreamEncodingInfo(typing.StreamEncodingInfo):
     """REST Stream Encoding Info"""
 
     __slots__ = ("_factory",)
@@ -95,7 +95,7 @@ class _StreamMapping(Mapping[StreamTypes, StreamEncodingInfo]):
         return len((__k for __k in StreamTypes if STREAMTYPES_STR_MAP[__k] in _dict))
 
 
-class EncodingInfo(typings.EncodingInfo):
+class EncodingInfo(typing.EncodingInfo):
     """REST Encoding Info"""
 
     __slots__ = ("_factory",)

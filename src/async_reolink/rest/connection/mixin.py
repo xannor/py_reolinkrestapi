@@ -1,87 +1,77 @@
 """REST Connection"""
 from __future__ import annotations
 
-from enum import IntEnum
 import inspect
 from json import JSONDecoder, loads as DEFAULT_JSON_DECODER
 import logging
 from typing import (
     TYPE_CHECKING,
-    Callable,
-    Protocol,
-    Sequence,
     cast,
     overload,
 )
 from urllib.parse import urlparse
 import aiohttp
 
-from async_reolink.api.commands import (
+from async_reolink.api.connection.typing import (
     CommandResponse as BaseCommandResponse,
     CommandRequest as BaseCommandRequest,
 )
-from async_reolink.api.connection import Connection as BaseConnection
+from async_reolink.api.connection.mixin import Connection as BaseConnection
 
 from async_reolink.api import errors
 
 from async_reolink.api.const import DEFAULT_TIMEOUT
 
-from .commands import CommandResponse, CommandRequest
+from .models import CommandRequest, CommandResponse
+from .typing import Encryption, SSLContextFactory, SessionFactory, WithConnection
 
-from .errors import CONNECTION_ERRORS, RESPONSE_ERRORS
+from ..command_factory import CommandFactory
+
+from ..errors import CONNECTION_ERRORS, RESPONSE_ERRORS
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
 
 
-class SessionFactory(Protocol):
-    """Session Factory"""
-
-    def __call__(self, base_url: str, timeout: int) -> aiohttp.ClientSession:
-        ...
+def _default_ssl_context(_base_url: str):
+    return False
 
 
-def _default_create_session(base_url: str, timeout: int):
+def _default_create_session(base_url: str, timeout: int, ssl: SSLContextFactory = None):
+    if ssl is None:
+        ssl = _default_ssl_context
     return aiohttp.ClientSession(
         base_url=base_url,
         timeout=aiohttp.ClientTimeout(total=timeout),
-        connector=aiohttp.TCPConnector(ssl=False),
+        connector=aiohttp.TCPConnector(ssl=ssl(base_url)),
     )
 
 
-class Encryption(IntEnum):
-    """Connection Encryption"""
-
-    NONE = 0
-    HTTPS = 1
-
-
-class Connection(BaseConnection):
+class Connection(BaseConnection, WithConnection):
     """REST Connection"""
 
     def __init__(
         self,
         *args,
-        session_factory: SessionFactory = None,
+        session: SessionFactory = None,
+        ssl: SSLContextFactory = None,
         loads: JSONDecoder = DEFAULT_JSON_DECODER,
         **kwargs,
     ):
-        self._force_get_callbacks: list[
-            Callable[[str, dict[str, str], Sequence[CommandRequest]], any]
-        ] = []
+        self._force_get_callbacks = []
         # self._response_callback: list[Callable[[CommandResponse], None]]
         super().__init__(*args, **kwargs)
         self.__session: aiohttp.ClientSession | None = None
-        self.__session_factory: SessionFactory = (
-            session_factory or _default_create_session
-        )
+        self.__session_factory: SessionFactory = session or _default_create_session
+        self.__ssl_context: SSLContextFactory = ssl or _default_ssl_context
         self.__base_url = ""
         self.__hostname = ""
         self.__connection_id = 0
         self.__loads = loads
+        self.__commands = CommandFactory()
 
     def _create_session(self, timeout: int):
-        return self.__session_factory(self.__base_url, timeout)
+        return self.__session_factory(self.__base_url, timeout, self.__ssl_context)
 
     @property
     def is_connected(self):
@@ -107,6 +97,10 @@ class Connection(BaseConnection):
     def hostname(self):
         """hostname"""
         return self.__hostname
+
+    @property
+    def commands(self):
+        return self.__commands
 
     @overload
     async def connect(
@@ -174,10 +168,10 @@ class Connection(BaseConnection):
         self.__hostname = ""
         self.__session = None
 
-    def __process_response(self, value: any):
+    def __process_response(self, value: any, request: CommandRequest = None):
         if not CommandResponse.is_response(value):
             raise errors.ReolinkResponseError("Invalid response from device")
-        response = CommandResponse.create_from(value)
+        response = CommandResponse.create_from(value, request)
         # for handler in self._response_callback:
         #    handler(response)
         return response
@@ -362,15 +356,15 @@ class Connection(BaseConnection):
             return
 
         if not isinstance(command_responses, list):
-            yield self.__process_response(command_responses)
+            yield self.__process_response(command_responses, args[0])
             return
 
         _LOGGER_DATA.debug(
             "%s%s->%s", self.__hostname, "(D)" if encrypted else "", command_responses
         )
 
-        for command_response in command_responses:
-            yield self.__process_response(command_response)
+        for i, command_response in enumerate(command_responses):
+            yield self.__process_response(command_response, args[i])
 
     def _execute(self, *args: BaseCommandRequest):
         """Internal API"""

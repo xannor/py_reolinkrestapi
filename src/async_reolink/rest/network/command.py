@@ -1,19 +1,20 @@
 """REST Network Commands"""
 
-from typing import TYPE_CHECKING, Callable, Final, Mapping
-from async_reolink.api.commands import network
+from typing import TYPE_CHECKING, Callable, Final, Mapping, TypeGuard
+from async_reolink.api.network import command as network
+from async_reolink.api.connection.typing import CommandResponse
 
-from async_reolink.api.typings import StreamTypes
-from ..typings import STREAMTYPES_STR_MAP
+from async_reolink.api.typing import StreamTypes
+from ..typing import STREAMTYPES_STR_MAP
 from ..models import MinMaxRange
 
-from ..network import models
+from . import models
 
-from ..commands import (
+from ..connection.models import (
     _CHANNEL_KEY,
     CommandRequest,
     CommandResponseTypes,
-    CommandResponse,
+    CommandResponse as RestCommandResponse,
 )
 
 
@@ -37,7 +38,7 @@ class GetLocalLinkRequest(CommandRequest, network.GetLocalLinkRequest):
 
 
 class GetLocalLinkResponse(
-    CommandResponse, network.GetLocalLinkResponse, test="is_response"
+    RestCommandResponse, network.GetLocalLinkResponse, test="is_response"
 ):
     """REST Get Local Link Response"""
 
@@ -76,7 +77,7 @@ class GetChannelStatusRequest(CommandRequest, network.GetChannelStatusRequest):
 
 
 class GetChannelStatusResponse(
-    CommandResponse, network.GetChannelStatusResponse, test="is_response"
+    RestCommandResponse, network.GetChannelStatusResponse, test="is_response"
 ):
     """REST Get Channel Status Response"""
 
@@ -108,7 +109,7 @@ class GetNetworkPortsRequest(CommandRequest, network.GetNetworkPortsRequest):
 
 
 class GetNetworkPortsResponse(
-    CommandResponse, network.GetNetworkPortsResponse, test="is_response"
+    RestCommandResponse, network.GetNetworkPortsResponse, test="is_response"
 ):
     """REST Get Local Link Response"""
 
@@ -184,7 +185,7 @@ class _RTSPUrls(Mapping[StreamTypes, str]):
 
 
 class GetRTSPUrlsResponse(
-    CommandResponse, network.GetRTSPUrlsResponse, test="is_response"
+    RestCommandResponse, network.GetRTSPUrlsResponse, test="is_response"
 ):
     """REST Get RTSP Urls Response"""
 
@@ -228,7 +229,7 @@ class GetP2PRequest(CommandRequest, network.GetP2PRequest):
         self.response_type = response_type
 
 
-class GetP2PResponse(CommandResponse, network.GetP2PResponse, test="is_response"):
+class GetP2PResponse(RestCommandResponse, network.GetP2PResponse, test="is_response"):
     """REST Get P2P Response"""
 
     __slots__ = ()
@@ -264,7 +265,7 @@ class GetWifiInfoRequest(CommandRequest, network.GetWifiInfoRequest):
 
 
 class GetWifiInfoResponse(
-    CommandResponse, network.GetWifiInfoResponse, test="is_request"
+    RestCommandResponse, network.GetWifiInfoResponse, test="is_request"
 ):
     """REST Get Wifi Info Response"""
 
@@ -306,7 +307,7 @@ _SIGNAL_KEY: Final = "wifiSignal"
 
 
 class GetWifiSignalResponse(
-    CommandResponse, network.GetWifiSignalResponse, test="is_request"
+    RestCommandResponse, network.GetWifiSignalResponse, test="is_request"
 ):
     """REST Get Wifi Signal Strength Response"""
 
@@ -347,3 +348,63 @@ class GetWifiSignalResponse(
             return value
 
         return MinMaxRange("", _factory)
+
+
+class CommandFactory(network.CommandFactory):
+    """REST Network Command Factory"""
+
+    def create_get_local_link_request(self):
+        return GetLocalLinkRequest()
+
+    def is_get_local_link_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetLocalLinkResponse]:
+        return isinstance(response, GetLocalLinkResponse)
+
+    def create_get_channel_status_request(self):
+        return GetChannelStatusRequest()
+
+    def is_get_channel_status_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetChannelStatusResponse]:
+        return isinstance(response, GetChannelStatusResponse)
+
+    def create_get_ports_request(self):
+        return GetNetworkPortsRequest()
+
+    def is_get_ports_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetNetworkPortsResponse]:
+        return isinstance(response, GetNetworkPortsResponse)
+
+    def create_get_rtsp_urls_request(self, channel_id: int):
+        return GetRTSPUrlsRequest(channel_id)
+
+    def is_get_rtsp_urls_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetRTSPUrlsResponse]:
+        return isinstance(response, GetRTSPUrlsResponse)
+
+    def create_get_p2p_request(self):
+        return GetP2PRequest()
+
+    def is_get_p2p_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetP2PResponse]:
+        return isinstance(response, GetP2PResponse)
+
+    def create_get_wifi_info_request(self):
+        return GetWifiInfoRequest()
+
+    def is_get_wifi_info_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetWifiInfoResponse]:
+        return isinstance(response, GetWifiInfoResponse)
+
+    def create_get_wifi_signal_request(self):
+        return GetWifiSignalRequest()
+
+    def is_get_wifi_signal_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetWifiSignalResponse]:
+        return isinstance(response, GetWifiSignalResponse)

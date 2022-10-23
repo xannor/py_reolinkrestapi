@@ -3,7 +3,7 @@
 from types import MappingProxyType
 from typing import Final
 
-from async_reolink.api.network.typings import LinkTypes
+from async_reolink.api.network.typing import LinkTypes
 
 STR_LINKTYPES_MAP: Final = MappingProxyType(
     {"Static" if _e == LinkTypes.STATIC else _e.name.upper(): _e for _e in LinkTypes}

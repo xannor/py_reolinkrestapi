@@ -4,8 +4,8 @@ from abc import ABC, abstractmethod
 import logging
 from typing import AsyncIterable, TypedDict
 
-from async_reolink.api.connection import Connection
-from async_reolink.api.commands import CommandRequest, CommandResponse
+from async_reolink.api.connection.mixin import Connection
+from async_reolink.api.connection.typing import CommandRequest, CommandResponse
 
 
 class MockConnectionValues(TypedDict):

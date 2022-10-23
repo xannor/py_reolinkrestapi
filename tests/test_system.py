@@ -10,9 +10,9 @@ from typing import Final
 from pytest import mark
 
 
-from async_reolink.api.commands import CommandRequest
-from async_reolink.rest.commands import CommandResponse
-from async_reolink.rest.system import System
+from async_reolink.api.connection.typing import CommandRequest
+from async_reolink.rest.connection.models import CommandResponse as RestCommandResponse
+from async_reolink.api.system.mixin import System
 from .models import MockConnection_SingleExecute
 
 _JSON: Final = MappingProxyType(
@@ -32,7 +32,7 @@ class TestRig(MockConnection_SingleExecute, System):
             return None
 
         _dict = loads(json)
-        response = CommandResponse.create_from(_dict)
+        response = RestCommandResponse.create_from(_dict)
         return response
 
 

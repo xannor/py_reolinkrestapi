@@ -1,17 +1,17 @@
 """LED Models"""
 
 from typing import Callable, Final
-from async_reolink.api.led import typings
-from async_reolink.api.typings import SimpleTimeValue
+from async_reolink.api.led import typing
+from async_reolink.api.typing import SimpleTimeValue
 
-from ..typings import FactoryValue
+from ..typing import FactoryValue
 
 from ..ai.models import AITypesMap, MutableAITypesMap
 
 # pylint: disable=missing-function-docstring
 
 
-class LightingSchedule(typings.LightingSchedule):
+class LightingSchedule(typing.LightingSchedule):
     """Lighting Schedule"""
 
     __slots__ = ("_factory",)
@@ -131,7 +131,7 @@ class MutableLightingSchedule(LightingSchedule):
         self._update_time(self.end, value)
 
 
-class WhiteLedInfo(typings.WhiteLedInfo):
+class WhiteLedInfo(typing.WhiteLedInfo):
     """White Led Info"""
 
     _BRIGHT_KEY: Final = "bright"
@@ -229,7 +229,7 @@ class MutableWhiteLedInfo(WhiteLedInfo):
         return MutableLightingSchedule(self._get_sched)
 
     @lighting_schedule.setter
-    def lighting_schedule(self, value: typings.LightingSchedule):
+    def lighting_schedule(self, value: typing.LightingSchedule):
         _sched = self.lighting_schedule
         _sched.start = value.start
         _sched.end = value.end

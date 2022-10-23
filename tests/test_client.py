@@ -1,6 +1,6 @@
 """Client object test"""
 
-from async_reolink.rest import Client
+from async_reolink.rest.client import Client
 
 
 def test_object():

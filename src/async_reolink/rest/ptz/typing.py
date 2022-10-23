@@ -2,7 +2,7 @@
 
 from types import MappingProxyType
 from typing import Final
-from async_reolink.api.ptz.typings import ZoomOperation, Operation
+from async_reolink.api.ptz.typing import ZoomOperation, Operation
 
 STR_OPERATION_MAP: Final = MappingProxyType(
     {

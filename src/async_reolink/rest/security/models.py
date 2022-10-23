@@ -6,8 +6,8 @@
 
 from typing import Callable, Final
 
-from async_reolink.api.security import typings
-from .typings import _LEVELTYPE_STR_MAP, _STR_LEVELTYPE_MAP
+from async_reolink.api.security import typing
+from .typing import _LEVELTYPE_STR_MAP, _STR_LEVELTYPE_MAP
 
 
 class LoginToken:
@@ -114,11 +114,11 @@ class DigestInfo:
         return value.get("UserName", "")
 
 
-_DEFAULT_LEVELTYPE: Final = typings.LevelTypes.GUEST
+_DEFAULT_LEVELTYPE: Final = typing.LevelTypes.GUEST
 _DEFUALT_LEVELTYPE_STR: Final = _LEVELTYPE_STR_MAP[_DEFAULT_LEVELTYPE]
 
 
-class UserInfo(typings.UserInfo):
+class UserInfo(typing.UserInfo):
     """REST User Record"""
 
     __slots__ = ("_factory",)

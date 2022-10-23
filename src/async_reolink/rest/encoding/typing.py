@@ -3,7 +3,7 @@
 from types import MappingProxyType
 from typing import Final
 
-from async_reolink.api.typings import StreamTypes
+from async_reolink.api.typing import StreamTypes
 
 
 STR_STREAMTYPES_MAP: Final = MappingProxyType(

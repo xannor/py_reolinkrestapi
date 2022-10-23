@@ -2,14 +2,15 @@
 
 from typing import Final, TypeGuard
 
-from async_reolink.api.commands import ai
+from async_reolink.api.ai import command as ai
+from async_reolink.api.connection.typing import CommandResponse
 
-# from async_reolink.api.ai import typings
+from . import models
 
-from ..ai import models
-from . import (
+
+from ..connection.models import (
     _CHANNEL_KEY,
-    CommandResponse,
+    CommandResponse as RestCommandResponse,
     CommandResponseTypes,
     CommandRequestWithChannel,
     CommandResponseWithChannel,
@@ -40,7 +41,7 @@ _NONE_DICT: Final[dict] = None
 
 
 class GetAiStateResponse(
-    CommandResponse,
+    RestCommandResponse,
     ai.GetAiStateResponse,
     test="is_response",
 ):
@@ -61,6 +62,10 @@ class GetAiStateResponse(
     @property
     def state(self):
         return models.State(self._get_value())
+
+    def can_update(self, value: any) -> TypeGuard[models.State]:
+        """Is value updatable"""
+        return isinstance(value, models.State)
 
 
 class GetAiConfigRequest(CommandRequestWithChannel, ai.GetAiConfigRequest):
@@ -100,6 +105,10 @@ class GetAiConfigResponse(
     def config(self):
         return models.Config(self._get_value())
 
+    def can_update(self, value: any) -> TypeGuard[models.Config]:
+        """Is value updatable"""
+        return isinstance(value, models.Config)
+
 
 class SetAiConfigRequest(CommandRequestWithChannel, ai.SetAiConfigRequest):
     """Set AI Configuration"""
@@ -119,3 +128,28 @@ class SetAiConfigRequest(CommandRequestWithChannel, ai.SetAiConfigRequest):
     @property
     def config(self):
         return models.MutableConfig(self._get_parameter)
+
+
+class CommandFactory(ai.CommandFactory):
+    """AI Rest Command Factory"""
+
+    def create_get_ai_state_request(self, channel_id: int):
+        return GetAiStateRequest(channel_id)
+
+    def is_get_ai_config_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetAiConfigResponse]:
+        return isinstance(response, GetAiConfigResponse)
+
+    def create_get_ai_config_request(self, channel_id: int):
+        return GetAiConfigRequest(channel_id)
+
+    def is_get_ai_state_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetAiStateResponse]:
+        return isinstance(response, GetAiStateResponse)
+
+    def create_set_ai_config(self, channel_id: int, config: ai.Config):
+        request = SetAiConfigRequest(channel_id)
+        request.config.update(config)
+        return request

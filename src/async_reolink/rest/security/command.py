@@ -1,12 +1,18 @@
 """Secuirty REST Commands"""
 
-from typing import TYPE_CHECKING, Callable, Final, Sequence, cast
-from async_reolink.api.commands import security
+from typing import TYPE_CHECKING, Callable, Final, Sequence, TypeGuard, cast
+from async_reolink.api.security import command as security, typing
+from async_reolink.api.connection.typing import CommandResponse
 
-from . import CommandRequest, CommandResponseTypes, CommandResponse
+from ..connection.models import (
+    CommandRequest,
+    CommandResponseTypes,
+    CommandResponse as RestCommandResponse,
+)
 
-from ..security.models import LoginToken, UserInfo
-from ..security.typings import _STR_LEVELTYPE_MAP
+
+from .models import LoginToken, UserInfo
+from .typing import _STR_LEVELTYPE_MAP
 
 from ..models import StringRange
 
@@ -69,7 +75,7 @@ class LoginRequest(CommandRequest, security.LoginRequest):
         self._login["password"] = value
 
 
-class LoginResponse(CommandResponse, security.LoginResponse, test="is_response"):
+class LoginResponse(RestCommandResponse, security.LoginResponse, test="is_response"):
     """REST Login Response"""
 
     __slots__ = ()
@@ -126,7 +132,7 @@ class _UserRange:
         self._factory = factory
 
     @property
-    def levels(self) -> list[security.typings.LevelTypes]:
+    def levels(self) -> list[typing.LevelTypes]:
         if (value := self._factory()) is None:
             return []
         if (_list := value.get("level", None)) is None:
@@ -195,7 +201,9 @@ class _Users(Sequence[UserInfo]):
         return len(self._value)
 
 
-class GetUserResponse(CommandResponse, security.GetUserResponse, test="is_response"):
+class GetUserResponse(
+    RestCommandResponse, security.GetUserResponse, test="is_response"
+):
     """REST Get Users(s) Response"""
 
     __slots__ = ()
@@ -221,3 +229,24 @@ class GetUserResponse(CommandResponse, security.GetUserResponse, test="is_respon
     @property
     def range(self):
         return _UserRange(self._get_user(self._get_range))
+
+
+class CommandFactory(security.CommandFactory):
+    """REST Security Command Factory"""
+
+    def create_login_request(self, username: str, password: str):
+        return LoginRequest(username, password)
+
+    def is_login_response(self, response: CommandResponse) -> TypeGuard[LoginResponse]:
+        return isinstance(response, LoginResponse)
+
+    def create_logout_request(self):
+        return LogoutRequest()
+
+    def create_get_user_request(self):
+        return GetUserRequest()
+
+    def is_get_user_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetUserResponse]:
+        return isinstance(response, GetUserResponse)

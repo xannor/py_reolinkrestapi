@@ -6,16 +6,16 @@ from typing import (
     Mapping,
     MutableMapping,
 )
-from async_reolink.api.ai import typings
+from async_reolink.api.ai import typing
 
-from ..typings import FactoryValue
-from .typings import AITYPES_STR_MAP
+from ..typing import FactoryValue
+from .typing import AITYPES_STR_MAP
 
 # pylint: disable=too-few-public-methods
 # pylint:disable=missing-function-docstring
 
 
-class AlarmState(typings.AlarmState):
+class AlarmState(typing.AlarmState):
     """Alarm State"""
 
     __slots__ = ("_factory",)
@@ -40,7 +40,7 @@ class AlarmState(typings.AlarmState):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
 
-class State(Mapping[typings.AITypes, AlarmState]):
+class State(Mapping[typing.AITypes, AlarmState]):
     """AI State"""
 
     __slots__ = ("_value",)
@@ -51,13 +51,13 @@ class State(Mapping[typings.AITypes, AlarmState]):
             value = {}
         self._value = value
 
-    def __getitem__(self, __k: typings.AITypes):
+    def __getitem__(self, __k: typing.AITypes):
         def _factory() -> dict:
             return self._value.get(AITYPES_STR_MAP[__k], None)
 
         return AlarmState(_factory)
 
-    def __contains__(self, __o: typings.AITypes):
+    def __contains__(self, __o: typing.AITypes):
         return AITYPES_STR_MAP[__o] in self._value
 
     def __iter__(self):
@@ -71,8 +71,15 @@ class State(Mapping[typings.AITypes, AlarmState]):
     def __repr__(self):
         return f"<{self.__class__.__name__}: {repr(self._value)}>"
 
+    def update(self, value: "State"):
+        if not isinstance(value, type(self)):
+            raise TypeError("Can only update from another State")
 
-class AITypesMap(Mapping[typings.AITypes, bool]):
+        # pylint: disable=protected-access
+        self._value = value._value
+
+
+class AITypesMap(Mapping[typing.AITypes, bool]):
     """AI Types Map"""
 
     __slots__ = ("_factory",)
@@ -81,7 +88,7 @@ class AITypesMap(Mapping[typings.AITypes, bool]):
         super().__init__()
         self._factory = factory
 
-    def __getitem__(self, __k: typings.AITypes) -> bool:
+    def __getitem__(self, __k: typing.AITypes) -> bool:
         if (_map := self._factory()) is not None:
             return _map.get(AITYPES_STR_MAP[__k], 0)
         return False
@@ -89,7 +96,7 @@ class AITypesMap(Mapping[typings.AITypes, bool]):
     def __iter__(self):
         if (_map := self._factory()) is None:
             return
-        for _e in typings.AITypes:
+        for _e in typing.AITypes:
             if _map is not None and AITYPES_STR_MAP[_e] in _map:
                 yield _e
 
@@ -102,15 +109,15 @@ class AITypesMap(Mapping[typings.AITypes, bool]):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
 
-class MutableAITypesMap(AITypesMap, MutableMapping[typings.AITypes, bool]):
+class MutableAITypesMap(AITypesMap, MutableMapping[typing.AITypes, bool]):
     """Mutable AI Types Map"""
 
-    def __setitem__(self, __k: typings.AITypes, __v: bool) -> None:
+    def __setitem__(self, __k: typing.AITypes, __v: bool) -> None:
         if (_map := self._factory(True)) is None:
             raise KeyError()
         _map[AITYPES_STR_MAP[__k]] = int(__v)
 
-    def __delitem__(self, __v: typings.AITypes) -> None:
+    def __delitem__(self, __v: typing.AITypes) -> None:
         if (_map := self._factory(True)) is None:
             raise KeyError()
         del _map[AITYPES_STR_MAP[__v]]
@@ -127,7 +134,7 @@ _AI_TRACK_KEY: Final = "aiTrack"
 _TRACK_TYPE_KEY: Final = "trackType"
 
 
-class Config(typings.Config):
+class Config(typing.Config):
     """AI Configuration"""
 
     __slots__ = ("_factory",)
@@ -251,10 +258,10 @@ class MutableConfig(Config):
         _map.clear()
         if isinstance(value, Mapping):
             _map.update(**value)
-        if isinstance(value, typings.AITypes):
+        if isinstance(value, typing.AITypes):
             _map[value] = True
         for item in value:
-            _map[typings.AITypes(item)] = True
+            _map[typing.AITypes(item)] = True
 
     @detect_type.setter
     def detect_type(self, value):

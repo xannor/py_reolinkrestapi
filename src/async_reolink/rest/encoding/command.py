@@ -1,15 +1,17 @@
 """Encoding REST Commands"""
 
 from typing import Final, TypeGuard
-from async_reolink.api.commands import encoding
+from async_reolink.api.encoding import command as encoding
+from async_reolink.api.connection.typing import CommandResponse
 
-from ..encoding.models import EncodingInfo
 
-from ..commands import (
+from .models import EncodingInfo
+
+from ..connection.models import (
     _CHANNEL_KEY,
     CommandResponseTypes,
     CommandRequestWithChannel,
-    CommandResponse,
+    CommandResponse as RestCommandResponse,
 )
 
 # pylint: disable=missing-function-docstring
@@ -32,7 +34,7 @@ class GetEncodingRequest(CommandRequestWithChannel, encoding.GetEncodingRequest)
 
 
 class GetEncodingResponse(
-    CommandResponse, encoding.GetEncodingResponse, test="is_response"
+    RestCommandResponse, encoding.GetEncodingResponse, test="is_response"
 ):
     """Get Encoding REST Response"""
 
@@ -54,3 +56,15 @@ class GetEncodingResponse(
     @property
     def info(self):
         return EncodingInfo(self._get_info)
+
+
+class CommandFactory(encoding.CommandFactory):
+    """REST Encoding Command Factory"""
+
+    def create_get_encoding_request(self, channel_id: int):
+        return GetEncodingRequest(channel_id)
+
+    def is_get_encoding_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetEncodingResponse]:
+        return isinstance(response, GetEncodingResponse)

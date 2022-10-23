@@ -1,19 +1,20 @@
 """System REST Commands"""
 
-from typing import Final
-from async_reolink.api.commands import system
+from typing import Final, TypeGuard
+from async_reolink.api.system import command as system
+from async_reolink.api.connection.typing import CommandResponse
 
 from .._utilities.dictlist import DictList
 
-from ..system.models import DaylightSavingsTimeInfo, DeviceInfo, TimeInfo, StorageInfo
+from .models import DaylightSavingsTimeInfo, DeviceInfo, TimeInfo, StorageInfo
 
-from ..commands import (
+from ..connection.models import (
     CommandRequest,
     CommandResponseTypes,
-    CommandResponse,
+    CommandResponse as RestCommandResponse,
 )
 
-from ..system.capabilities import Capabilities
+from .capabilities import Capabilities
 
 # pylint:disable=missing-function-docstring
 # pylint: disable=too-few-public-methods
@@ -60,7 +61,7 @@ class GetAbilitiesRequest(CommandRequest, system.GetAbilitiesRequest):
 
 
 class GetAbilitiesResponse(
-    CommandResponse, system.GetAbilitiesResponse, test="is_response"
+    RestCommandResponse, system.GetAbilitiesResponse, test="is_response"
 ):
     """REST Get Capability Response"""
 
@@ -97,7 +98,7 @@ class GetDeviceInfoRequest(CommandRequest, system.GetDeviceInfoRequest):
 
 
 class GetDeviceInfoResponse(
-    CommandResponse, system.GetDeviceInfoResponse, test="is_response"
+    RestCommandResponse, system.GetDeviceInfoResponse, test="is_response"
 ):
     """REST Get Device Info Response"""
 
@@ -134,7 +135,7 @@ class GetTimeRequest(CommandRequest, system.GetTimeRequest):
         self.response_type = response_type
 
 
-class GetTimeResponse(CommandResponse, system.GetTimeResponse, test="is_response"):
+class GetTimeResponse(RestCommandResponse, system.GetTimeResponse, test="is_response"):
     """REST Get Time Response"""
 
     __slots__ = ()
@@ -194,8 +195,8 @@ class GetHddInfoRequest(CommandRequest, system.GetHddInfoRequest):
         self.response_type = response_type
 
 
-class GetGddInfoResponse(
-    CommandResponse, system.GetHddInfoResponse, test="is_response"
+class GetHddInfoResponse(
+    RestCommandResponse, system.GetHddInfoResponse, test="is_response"
 ):
     """REST Get HDD Info Response"""
 
@@ -215,3 +216,42 @@ class GetGddInfoResponse(
     @property
     def info(self):
         return DictList("number", self._get_info(), StorageInfo)
+
+
+class CommandFactory(system.CommandFactory):
+    """REST System Command Factory"""
+
+    def create_get_capabilities_request(self, username: str | None):
+        return GetAbilitiesRequest(username)
+
+    def is_get_capabilities_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetAbilitiesResponse]:
+        return isinstance(response, GetAbilitiesResponse)
+
+    def create_get_device_info_request(self):
+        return GetDeviceInfoRequest()
+
+    def is_get_device_info_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetDeviceInfoResponse]:
+        return isinstance(response, GetDeviceInfoResponse)
+
+    def create_get_time_request(self):
+        return GetTimeRequest()
+
+    def is_get_time_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetTimeResponse]:
+        return isinstance(response, GetTimeResponse)
+
+    def create_reboot_request(self):
+        return RebootRequest()
+
+    def create_get_hdd_info_request(self):
+        return GetHddInfoRequest()
+
+    def is_get_hdd_info_response(
+        self, response: CommandResponse
+    ) -> TypeGuard[GetHddInfoResponse]:
+        return isinstance(response, GetHddInfoResponse)

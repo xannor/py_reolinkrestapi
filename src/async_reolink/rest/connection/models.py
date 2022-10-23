@@ -2,14 +2,13 @@
 
 from abc import ABC
 from enum import IntEnum
-from json import dumps
 from typing import (
     Callable,
     Final,
     TypeGuard,
 )
 
-from async_reolink.api import commands
+from async_reolink.api.connection import typing as commands
 
 _COMMAND_KEY: Final = "cmd"
 _ACTION_KEY: Final = "action"
@@ -106,12 +105,12 @@ class CommandResponse(commands.CommandResponse, ABC):
             cls._response_handlers[cls] = call
 
     @classmethod
-    def create_from(cls, value: dict):
+    def create_from(cls, value: dict, request: CommandRequest = None):
         """wrap response in CommandResponse Implementation"""
 
         for (_type, test) in cls._response_handlers.items():
             if test(value):
-                return _type(value)
+                return _type(value, request=request)
 
         return CommandResponse(value)
 
@@ -132,7 +131,7 @@ class CommandResponse(commands.CommandResponse, ABC):
 
     __slots__ = ("_response",)
 
-    def __init__(self, response: dict) -> None:
+    def __init__(self, response: dict, **kwargs) -> None:
         self._response = response
 
     def _underlying_value(self):
@@ -201,14 +200,20 @@ class CommandResponseWithCode(
 class CommandResponseWithChannel(CommandResponse, commands.ChannelValue):
     """Rest Command Response Value with Channel"""
 
-    __slots__ = ()
+    __slots__ = ("_fallback_channel_id",)
+
+    def __init__(
+        self, response: dict, *_, fallback_channel_id: int = 0, **kwargs
+    ) -> None:
+        super().__init__(response, **kwargs)
+        self._fallback_channel_id = fallback_channel_id
 
     @property
     def channel_id(self):
         return (
             value.get(_CHANNEL_KEY, 0)
             if (value := self._get_value()) is not None
-            else 0
+            else self._fallback_channel_id
         )
 
 

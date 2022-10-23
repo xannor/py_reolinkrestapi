@@ -1,14 +1,14 @@
 """REST Network Models"""
 
 from typing import Callable, Final, Mapping
-from async_reolink.api.network import typings
+from async_reolink.api.network import typing
 
-from .typings import STR_LINKTYPES_MAP
+from .typing import STR_LINKTYPES_MAP
 
 # pylint: disable=missing-function-docstring
 
 
-class IPInfo(typings.IPInfo):
+class IPInfo(typing.IPInfo):
     """REST IP Info"""
 
     __slots__ = ("_factory",)
@@ -38,7 +38,7 @@ class IPInfo(typings.IPInfo):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
 
-class DNSInfo(typings.DNSInfo):
+class DNSInfo(typing.DNSInfo):
     """REST DNS Info"""
 
     __slots__ = ("_factory",)
@@ -68,7 +68,7 @@ class DNSInfo(typings.DNSInfo):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
 
-class LinkInfo(typings.LinkInfo):
+class LinkInfo(typing.LinkInfo):
     """REST Link Info"""
 
     __slots__ = ("_value",)
@@ -113,7 +113,7 @@ class LinkInfo(typings.LinkInfo):
 _CHANNEL_KEY: Final = "channel"
 
 
-class ChannelStatus(typings.ChannelStatus):
+class ChannelStatus(typing.ChannelStatus):
     """REST Channel Status"""
 
     __slots__ = ("_factory",)
@@ -210,7 +210,7 @@ class ChannelStatuses(Mapping[int, ChannelStatus]):
         return f"<{self.__class__.__name__}: {repr(self._value)}>"
 
 
-class P2PInfo(typings.P2PInfo):
+class P2PInfo(typing.P2PInfo):
     """REST P2P Info"""
 
     __slots__ = ("_value",)
@@ -232,7 +232,7 @@ class P2PInfo(typings.P2PInfo):
         return f"<{self.__class__.__name__}: {repr(self._value)}>"
 
 
-class NetworkPort(typings.NetworkPort):
+class NetworkPort(typing.NetworkPort):
     """REST Network Port"""
 
     __slots__ = ("_factory", "_prefix")
@@ -269,7 +269,7 @@ class NetworkPort(typings.NetworkPort):
         return f"<{self.__class__.__name__}: enabled={bool(self.enabled)}, value={self.value}>"
 
 
-class NetworkPorts(typings.NetworkPorts):
+class NetworkPorts(typing.NetworkPorts):
     """REST Network Ports"""
 
     __slots__ = ("_value",)
@@ -310,7 +310,7 @@ class NetworkPorts(typings.NetworkPorts):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
 
-class WifiInfo(typings.WifiInfo):
+class WifiInfo(typing.WifiInfo):
     """REST Wifi Info"""
 
     __slots__ = ("_value",)

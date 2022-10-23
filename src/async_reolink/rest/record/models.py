@@ -2,10 +2,10 @@
 
 from datetime import date, datetime, time
 from typing import Callable, Final, Iterable, overload
-from async_reolink.api.typings import DateTimeValue as BaseDateTimeValue, StreamTypes
-from async_reolink.api.record import typings
+from async_reolink.api.typing import DateTimeValue as BaseDateTimeValue, StreamTypes
+from async_reolink.api.record import typing
 
-from ..typings import STR_STREAMTYPES_MAP, STREAMTYPES_STR_MAP, FactoryValue
+from ..typing import STR_STREAMTYPES_MAP, STREAMTYPES_STR_MAP, FactoryValue
 
 # pylint: disable=missing-function-docstring
 
@@ -78,7 +78,7 @@ class MutableDateTimeValue(DateTimeValue):
         ...
 
     @overload
-    def __init__(self, value: typings.DateTimeValue) -> None:
+    def __init__(self, value: typing.DateTimeValue) -> None:
         ...
 
     @overload
@@ -86,7 +86,7 @@ class MutableDateTimeValue(DateTimeValue):
         ...
 
     def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        source: typings.DateTimeValue = None
+        source: typing.DateTimeValue = None
         if not callable(factory):
             value = factory
             if not isinstance(value, dict):
@@ -140,7 +140,7 @@ _DEFAULT_STREAMTYPE: Final = StreamTypes.MAIN
 _DEFAULT_STREAMTYPE_STR = STREAMTYPES_STR_MAP[_DEFAULT_STREAMTYPE]
 
 
-class Search(typings.Search):
+class Search(typing.Search):
     """REST Search"""
 
     __slots__ = ("_factory",)
@@ -189,7 +189,7 @@ class MutableSearch(Search):
         ...
 
     @overload
-    def __init__(self, value: typings.Search) -> None:
+    def __init__(self, value: typing.Search) -> None:
         ...
 
     @overload
@@ -197,7 +197,7 @@ class MutableSearch(Search):
         ...
 
     def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        source: typings.Search = None
+        source: typing.Search = None
         if not callable(factory):
             value = factory
             if not isinstance(value, dict):
@@ -241,7 +241,7 @@ class MutableSearch(Search):
         return MutableDateTimeValue(self._get_start)
 
     @start.setter
-    def start(self, value: typings.DateTimeValue):
+    def start(self, value: typing.DateTimeValue):
         if not isinstance(value, MutableDateTimeValue):
             value = MutableDateTimeValue(value)
         self._value["StartTime"] = value._factory(True)
@@ -259,13 +259,13 @@ class MutableSearch(Search):
         return MutableDateTimeValue(self._get_end)
 
     @end.setter
-    def end(self, value: typings.DateTimeValue):
+    def end(self, value: typing.DateTimeValue):
         if not isinstance(value, MutableDateTimeValue):
             value = MutableDateTimeValue(value)
         self._value["EndTime"] = value._factory(True)
 
 
-class File(typings.File):
+class File(typing.File):
     """REST Recording File"""
 
     __slots__ = ("_factory",)
@@ -342,7 +342,7 @@ class _SearchStatusTable(Iterable[int]):
                 yield i
 
 
-class SearchStatus(typings.SearchStatus):
+class SearchStatus(typing.SearchStatus):
     """REST Recodring Search Status"""
 
     __slots__ = ("_factory",)

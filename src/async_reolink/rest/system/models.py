@@ -1,10 +1,10 @@
 """System models"""
 
 from typing import Callable, Final, TypeVar
-from async_reolink.api.commands import system
-from async_reolink.api.system import typings
-from async_reolink.api.typings import WeekDays
-from .typings import _INT_WEEKDAY_MAP, _INT_STORAGETYPE_MAP
+from async_reolink.api.system import command as system
+from async_reolink.api.system import typing
+from async_reolink.api.typing import WeekDays
+from .typing import _INT_WEEKDAY_MAP, _INT_STORAGETYPE_MAP
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=too-few-public-methods
@@ -12,7 +12,7 @@ from .typings import _INT_WEEKDAY_MAP, _INT_STORAGETYPE_MAP
 _T = TypeVar("_T")
 
 
-class DeviceInfo(typings.DeviceInfo):
+class DeviceInfo(typing.DeviceInfo):
     """Device Info"""
 
     __slots__ = ("_value",)
@@ -26,7 +26,7 @@ class DeviceInfo(typings.DeviceInfo):
     def _factory(self):
         return self._value
 
-    class IO(typings.DeviceInfo.IO):
+    class IO(typing.DeviceInfo.IO):
         """IO"""
 
         __slots__ = ("_factory",)
@@ -51,7 +51,7 @@ class DeviceInfo(typings.DeviceInfo):
     def io(self):
         return type(self).IO(self._factory)
 
-    class Version(typings.DeviceInfo.Version):
+    class Version(typing.DeviceInfo.Version):
         """Versions"""
 
         __slots__ = ("_factory",)
@@ -291,8 +291,8 @@ class TimeInfo(system.TimeInfo):
     @property
     def hour_format(self):
         if (value := self._factory()) is None:
-            return typings.HourFormat.HR_12
-        return value.get("hourFmt", typings.HourFormat.HR_12)
+            return typing.HourFormat.HR_12
+        return value.get("hourFmt", typing.HourFormat.HR_12)
 
     @property
     def date_format(self):
@@ -307,10 +307,10 @@ class TimeInfo(system.TimeInfo):
         return value.get("timeZone", 0)
 
 
-_DEFAULT_STORAGETYPE: Final[typings.StorageTypes] = None
+_DEFAULT_STORAGETYPE: Final[typing.StorageTypes] = None
 
 
-class StorageInfo(typings.StorageInfo):
+class StorageInfo(typing.StorageInfo):
     """REST Storage Info"""
 
     __slots__ = ("_factory",)

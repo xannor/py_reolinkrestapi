@@ -2,7 +2,7 @@
 
 from types import MappingProxyType
 from typing import Final
-from async_reolink.api.led.typings import LightStates
+from async_reolink.api.led.typing import LightStates
 
 STR_LIGHTSTATES_MAP: Final = MappingProxyType(
     {"Auto": LightStates.AUTO, "On": LightStates.ON, "Off": LightStates.OFF}

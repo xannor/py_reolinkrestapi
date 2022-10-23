@@ -1,11 +1,11 @@
 """REST PTZ Models"""
 
 from typing import Callable, Final, Iterable, MutableSequence, Sequence, overload
-from async_reolink.api.ptz import typings
+from async_reolink.api.ptz import typing
 
-from ..typings import FactoryValue
+from ..typing import FactoryValue
 
-from ..commands import _CHANNEL_KEY
+from ..connection.models import _CHANNEL_KEY
 
 # pylint: disable=missing-function-docstring
 
@@ -17,7 +17,7 @@ _FOCUS_KEY: Final = "focus"
 _ZOOM_KEY: Final = "zoom"
 
 
-class ZoomFocus(typings.ZoomFocus):
+class ZoomFocus(typing.ZoomFocus):
     """REST PTZ Zoom/Focus"""
 
     __slots__ = ("_value",)
@@ -41,8 +41,11 @@ class ZoomFocus(typings.ZoomFocus):
     def focus(self) -> int:
         return self._get_pos(_FOCUS_KEY)
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._value)}>"
 
-class Preset(typings.Preset):
+
+class Preset(typing.Preset):
     """REST PTZ Preset"""
 
     __slots__ = ("_factory",)
@@ -74,6 +77,9 @@ class Preset(typings.Preset):
             return ""
         return value.get(_NAME_KEY, "")
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
 
 class MutablePreset(Preset):
     """Mutable PTZ Preset"""
@@ -85,7 +91,7 @@ class MutablePreset(Preset):
         ...
 
     @overload
-    def __init__(self, value: typings.Preset) -> None:
+    def __init__(self, value: typing.Preset) -> None:
         ...
 
     @overload
@@ -93,7 +99,7 @@ class MutablePreset(Preset):
         ...
 
     def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        source: typings.Preset = None
+        source: typing.Preset = None
         if not callable(factory):
             value = factory
             if not isinstance(value, dict):
@@ -132,7 +138,7 @@ _DWELL_TIME_KEY: Final = "dwellTime"
 _SPEED_KEY: Final = "speed"
 
 
-class PatrolPreset(typings.PatrolPreset):
+class PatrolPreset(typing.PatrolPreset):
     """REST PTZ Patrol Preset"""
 
     __slots__ = ("_factory",)
@@ -158,6 +164,9 @@ class PatrolPreset(typings.PatrolPreset):
             return 0
         return value.get(_SPEED_KEY, 0)
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
 
 class MutablePatrolPreset(PatrolPreset):
     """REST Mutable PTZ Patrol Preset"""
@@ -169,7 +178,7 @@ class MutablePatrolPreset(PatrolPreset):
         ...
 
     @overload
-    def __init__(self, value: typings.PatrolPreset) -> None:
+    def __init__(self, value: typing.PatrolPreset) -> None:
         ...
 
     @overload
@@ -180,7 +189,7 @@ class MutablePatrolPreset(PatrolPreset):
         self,
         factory: FactoryValue[dict] = None,
     ) -> None:
-        source: typings.Preset = None
+        source: typing.Preset = None
         if not callable(factory):
             value = factory
             if not isinstance(value, dict):
@@ -230,6 +239,9 @@ class _PatrolPresets(Sequence[PatrolPreset]):
             return 0
         return len(value)
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
 
 class _MutablePatrolPresets(MutableSequence[MutablePatrolPreset]):
     __slots__ = ("_factory",)
@@ -257,10 +269,10 @@ class _MutablePatrolPresets(MutableSequence[MutablePatrolPreset]):
         if (_value := self._factory(True)) is not None:
             _value.insert(index, value)
 
-    def append(self, value: typings.PatrolPreset) -> None:
+    def append(self, value: typing.PatrolPreset) -> None:
         return super().append(value)
 
-    def insert(self, index: int, value: typings.PatrolPreset):
+    def insert(self, index: int, value: typing.PatrolPreset):
         if not isinstance(value, MutablePatrolPreset):
             value = MutablePatrolPreset(value)
         # pylint: disable=protected-access
@@ -280,7 +292,7 @@ _PRESET_KEY: Final = "preset"
 _RUNNING_KEY: Final = "running"
 
 
-class Patrol(typings.Patrol):
+class Patrol(typing.Patrol):
     """REST PTZ Patrol"""
 
     __slots__ = ("_factory",)
@@ -308,6 +320,9 @@ class Patrol(typings.Patrol):
             return 0
         return value.get(_RUNNING_KEY, 0)
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
 
 class MutablePatrol(Patrol):
     """Mutable REST PTZ Patrol"""
@@ -319,7 +334,7 @@ class MutablePatrol(Patrol):
         ...
 
     @overload
-    def __init__(self, value: typings.Patrol) -> None:
+    def __init__(self, value: typing.Patrol) -> None:
         ...
 
     @overload
@@ -327,7 +342,7 @@ class MutablePatrol(Patrol):
         ...
 
     def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        source: typings.Patrol = None
+        source: typing.Patrol = None
         if not callable(factory):
             value = factory
             if not isinstance(value, dict):
@@ -365,14 +380,14 @@ class MutablePatrol(Patrol):
         return _MutablePatrolPresets(self._get_presets)
 
     @presets.setter
-    def presets(self, value: Iterable[typings.PatrolPreset]):
+    def presets(self, value: Iterable[typing.PatrolPreset]):
         _presets = self.presets
         _presets.clear()
         for preset in value:
             _presets.append(preset)
 
 
-class Track(typings.Track):
+class Track(typing.Track):
     """REST Track (Tattern)"""
 
     __slots__ = ("_factory",)
@@ -385,6 +400,9 @@ class Track(typings.Track):
     name = Preset.name
     running = Patrol.running
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
 
 class MutableTrack(Track):
     """Mutable REST Track (Tattern)"""
@@ -396,7 +414,7 @@ class MutableTrack(Track):
         ...
 
     @overload
-    def __init__(self, value: typings.Track) -> None:
+    def __init__(self, value: typing.Track) -> None:
         ...
 
     @overload
@@ -404,7 +422,7 @@ class MutableTrack(Track):
         ...
 
     def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        source: typings.Track = None
+        source: typing.Track = None
         if not callable(factory):
             value = factory
             if not isinstance(value, dict):
