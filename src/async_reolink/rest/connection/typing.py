@@ -35,7 +35,7 @@ class SessionFactory(Protocol):
     """Session Factory"""
 
     def __call__(
-        self, base_url: str, timeout: int, ssl: SSLContextFactory = None
+        self, base_url: str, timeout: int, ssl: SSLContextFactory | None = None
     ) -> aiohttp.ClientSession:
         ...
 

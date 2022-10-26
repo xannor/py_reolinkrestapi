@@ -22,7 +22,12 @@ from async_reolink.api import errors
 
 from async_reolink.api.const import DEFAULT_TIMEOUT
 
-from .models import CommandRequest, CommandResponse
+from .models import (
+    CommandRequest,
+    CommandResponse,
+    CommandResponseWithCode,
+    _RSP_CODE_KEY,
+)
 from .typing import Encryption, SSLContextFactory, SessionFactory, WithConnection
 
 from ..command_factory import CommandFactory
@@ -33,17 +38,11 @@ _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
 
 
-def _default_ssl_context(_base_url: str):
-    return False
-
-
 def _default_create_session(base_url: str, timeout: int, ssl: SSLContextFactory = None):
-    if ssl is None:
-        ssl = _default_ssl_context
     return aiohttp.ClientSession(
         base_url=base_url,
         timeout=aiohttp.ClientTimeout(total=timeout),
-        connector=aiohttp.TCPConnector(ssl=ssl(base_url)),
+        connector=aiohttp.TCPConnector(ssl=ssl(base_url) if ssl is not None else None),
     )
 
 
@@ -53,8 +52,8 @@ class Connection(BaseConnection, WithConnection):
     def __init__(
         self,
         *args,
-        session: SessionFactory = None,
-        ssl: SSLContextFactory = None,
+        session: SessionFactory | None = None,
+        ssl: SSLContextFactory | None = None,
         loads: JSONDecoder = DEFAULT_JSON_DECODER,
         **kwargs,
     ):
@@ -63,7 +62,7 @@ class Connection(BaseConnection, WithConnection):
         super().__init__(*args, **kwargs)
         self.__session: aiohttp.ClientSession | None = None
         self.__session_factory: SessionFactory = session or _default_create_session
-        self.__ssl_context: SSLContextFactory = ssl or _default_ssl_context
+        self.__ssl_context: SSLContextFactory = ssl
         self.__base_url = ""
         self.__hostname = ""
         self.__connection_id = 0
@@ -201,8 +200,6 @@ class Connection(BaseConnection, WithConnection):
                 elif not use_get:
                     use_get = True
 
-        count = None
-
         headers = {"Accept": "*/*", "Content-Type": "application/json"}
 
         cleanup = True
@@ -230,7 +227,12 @@ class Connection(BaseConnection, WithConnection):
                 )
             else:
                 data = self.__session.json_serialize(
-                    list(map(lambda r: r._get_request(), args))
+                    list(
+                        map(
+                            lambda r: r._get_request(),  # pylint: disable=protected-access
+                            args,
+                        )
+                    )
                 )
 
                 _LOGGER_DATA.debug(
@@ -244,58 +246,14 @@ class Connection(BaseConnection, WithConnection):
                 )
 
             response = await context
-            if count is not None:
-                count.free = True
-            if response.status in (302, 301) and "location" in response.headers:
-                location = response.headers["location"]
-                redir = urlparse(location)
-                base = urlparse(self.__base_url)
-                if (
-                    base.scheme != redir.scheme
-                    and base.scheme == "http"
-                    or redir.scheme == "http"
-                ):
-                    if redir.scheme == "http":
-                        _LOGGER.warning(
-                            "Got http redirect from camera (%s), please verify configuration",
-                            self.__base_url,
-                        )
-                        await self.connect(
-                            redir.hostname,
-                            redir.port,
-                            self.__session.timeout.total,
-                            encryption=Encryption.NONE,
-                        )
-                    else:
-                        _LOGGER.warning(
-                            "Got https redirect from camera (%s), please verify configuration",
-                            self.__base_url,
-                        )
-                        await self.connect(
-                            redir.hostname,
-                            redir.port,
-                            self.__session.timeout.total,
-                            encryption=Encryption.HTTPS,
-                        )
-                    async for command_response in self.__execute(*args):
-                        if TYPE_CHECKING:
-                            command_response = cast(
-                                bytes | BaseCommandResponse, command_response
-                            )
-                        yield command_response
-                    return
-
-                _LOGGER.error(
-                    "got unexpected redirect from camera (%s), please verify configurtation",
-                    self.__base_url,
-                )
+            if response.status >= 300:
+                _LOGGER.error("got redirect (%d) response code", response.status)
                 raise aiohttp.ClientResponseError(
                     response.request_info,
                     [response],
                     status=response.status,
                     headers=response.headers,
                 )
-
             if response.status >= 500:
                 _LOGGER.error("got critical (%d) response code", response.status)
                 raise aiohttp.ClientResponseError(
