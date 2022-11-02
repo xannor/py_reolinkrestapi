@@ -3,6 +3,7 @@
 from __future__ import annotations
 from time import time
 from typing import Sequence
+from urllib.parse import quote_plus
 
 from async_reolink.api.security.mixin import Security as BaseSecurity
 
@@ -22,17 +23,16 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
 
     def __init__(self, *args, **kwargs) -> None:
         self.__token = ""
+        self.__uri_token = ""
         super().__init__(*args, **kwargs)
         self._force_get_callbacks.append(self.__force_get_login)
         self.__token_expires: float = 0
         self.__last_pwd_hash = 0
 
-    def __force_get_login(
-        self, url: str, _: dict[str, str], commands: Sequence[CommandRequest]
-    ):
+    def __force_get_login(self, url: str, _: dict[str, str], commands: Sequence[CommandRequest]):
         if len(commands) > 1 or not isinstance(commands[0], LoginRequest):
             if self.__token:
-                return (False, url + f"?token={self.__token}")
+                return (False, url + f"?token={self.__uri_token}")
             return
         return url + f"?cmd={commands[0].command}"
 
@@ -68,10 +68,12 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
         token = response.token
 
         self.__token = token.name
+        self.__uri_token = quote_plus(self.__token)
         self.__token_expires = time() + token.lease_time
 
         return True
 
     def _clear_login(self):
         self.__token = ""
+        self.__uri_token = ""
         self.__token_expires = 0

@@ -22,10 +22,13 @@ from async_reolink.api import errors
 
 from async_reolink.api.const import DEFAULT_TIMEOUT
 
+from ..const import DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT
+
 from .models import (
     CommandRequest,
     CommandResponse,
     CommandResponseWithCode,
+    CommandErrorResponse,
     _RSP_CODE_KEY,
 )
 from .typing import Encryption, SSLContextFactory, SessionFactory, WithConnection
@@ -121,10 +124,10 @@ class Connection(BaseConnection, WithConnection):
     ):
         """setup connection to device"""
         encryption = kwargs.get("encryption", Encryption.NONE)
-        if port == 443 or (port is None and encryption == Encryption.HTTPS):
+        if port == DEFAULT_HTTPS_PORT or (port is None and encryption == Encryption.HTTPS):
             https = True
             port = None
-        elif port == 80 and encryption != Encryption.HTTPS:
+        elif port == DEFAULT_HTTP_PORT and encryption != Encryption.HTTPS:
             https = False
             port = None
         else:
@@ -167,10 +170,16 @@ class Connection(BaseConnection, WithConnection):
         self.__hostname = ""
         self.__session = None
 
-    def __process_response(self, value: any, request: CommandRequest = None):
+    def __process_response(self, value: any, request: CommandRequest = None) -> BaseCommandResponse:
         if not CommandResponse.is_response(value):
             raise errors.ReolinkResponseError("Invalid response from device")
         response = CommandResponse.create_from(value, request)
+        if isinstance(response, CommandErrorResponse):
+            eat = False
+            for callback in self._error_handlers:
+                if callback(response):
+                    return None
+
         # for handler in self._response_callback:
         #    handler(response)
         return response
@@ -235,9 +244,7 @@ class Connection(BaseConnection, WithConnection):
                     )
                 )
 
-                _LOGGER_DATA.debug(
-                    "%s%s<-%s", self.__hostname, "(E)" if encrypted else "", data
-                )
+                _LOGGER_DATA.debug("%s<-%s", url, data)
                 context = self.__session.post(
                     url,
                     data=data,
@@ -314,7 +321,9 @@ class Connection(BaseConnection, WithConnection):
             return
 
         if not isinstance(command_responses, list):
-            yield self.__process_response(command_responses, args[0])
+            command_response = self.__process_response(command_responses, args[0])
+            if command_response is not None:
+                yield command_response
             return
 
         _LOGGER_DATA.debug(
@@ -322,7 +331,9 @@ class Connection(BaseConnection, WithConnection):
         )
 
         for i, command_response in enumerate(command_responses):
-            yield self.__process_response(command_response, args[i])
+            command_response = self.__process_response(command_response, args[i])
+            if command_response is not None:
+                yield command_response
 
     def _execute(self, *args: BaseCommandRequest):
         """Internal API"""

@@ -80,9 +80,7 @@ class _PresetRange:
 
     def _keyed_factory(self, key: str):
         def _factory() -> dict:
-            return (
-                value.get(key, None) if (value := self._factory()) is not None else None
-            )
+            return value.get(key, None) if (value := self._factory()) is not None else None
 
         return _factory
 
@@ -105,9 +103,7 @@ class GetPresetResponse(RestCommandResponse, ptz.GetPresetResponse, test="is_res
         return super().is_response(value, GetPresetRequest.COMMAND)
 
     def _get_sub_value(self, factory: Callable[[], dict]) -> list:
-        return (
-            value.get(_PRESET_KEY, None) if (value := factory()) is not None else None
-        )
+        return value.get(_PRESET_KEY, None) if (value := factory()) is not None else None
 
     @property
     def channel_id(self) -> int:
@@ -217,9 +213,7 @@ class _PatrolPresetRange:
 
     def _keyed_factory(self, key: str):
         def _factory() -> dict:
-            return (
-                value.get(key, None) if (value := self._factory()) is not None else None
-            )
+            return value.get(key, None) if (value := self._factory()) is not None else None
 
         return _factory
 
@@ -247,9 +241,7 @@ class _PatrolRange:
 
     def _keyed_factory(self, key: str):
         def _factory() -> dict:
-            return (
-                value.get(key, None) if (value := self._factory()) is not None else None
-            )
+            return value.get(key, None) if (value := self._factory()) is not None else None
 
         return _factory
 
@@ -276,9 +268,7 @@ class GetPatrolResponse(RestCommandResponse, ptz.GetPatrolResponse, test="is_res
         return super().is_response(value, GetPatrolRequest.COMMAND)
 
     def _get_sub_value(self, factory: Callable[[], dict]) -> list:
-        return (
-            value.get(_PATROL_KEY, None) if (value := factory()) is not None else None
-        )
+        return value.get(_PATROL_KEY, None) if (value := factory()) is not None else None
 
     channel_id = GetPresetResponse.channel_id
 
@@ -370,9 +360,7 @@ class _TrackRange:
 
     def _keyed_factory(self, key: str):
         def _factory() -> dict:
-            return (
-                value.get(key, None) if (value := self._factory()) is not None else None
-            )
+            return value.get(key, None) if (value := self._factory()) is not None else None
 
         return _factory
 
@@ -396,9 +384,7 @@ class _TracksRange:
 
     def _keyed_factory(self, key: str):
         def _factory() -> dict:
-            return (
-                value.get(key, None) if (value := self._factory()) is not None else None
-            )
+            return value.get(key, None) if (value := self._factory()) is not None else None
 
         return _factory
 
@@ -417,11 +403,7 @@ class GetTatternResponse(RestCommandResponse, ptz.GetTatternResponse):
         return super().is_response(value, GetTatternRequest.COMMAND)
 
     def _get_sub_value(self) -> dict:
-        return (
-            value.get(_TATTERN_KEY, None)
-            if (value := self._get_value()) is not None
-            else None
-        )
+        return value.get(_TATTERN_KEY, None) if (value := self._get_value()) is not None else None
 
     def _get_tracks(self) -> list:
         if (value := self._get_sub_value()) is None:
@@ -430,11 +412,7 @@ class GetTatternResponse(RestCommandResponse, ptz.GetTatternResponse):
 
     @property
     def channel_id(self) -> int:
-        return (
-            value.get(_CHANNEL_KEY, 0)
-            if (value := self._get_sub_value()) is not None
-            else 0
-        )
+        return value.get(_CHANNEL_KEY, 0) if (value := self._get_sub_value()) is not None else 0
 
     @property
     def tracks(self):
@@ -577,9 +555,7 @@ _AUTO_FOCUS_KEY: Final = "AutoFocus"
 _DISABLE_KEY: Final = "disable"
 
 
-class GetAutoFocusResponse(
-    RestCommandResponse, ptz.GetAutoFocusResponse, test="is_response"
-):
+class GetAutoFocusResponse(RestCommandResponse, ptz.GetAutoFocusResponse, test="is_response"):
     """Get PTZ AutoFocus Response"""
 
     __slots__ = ()
@@ -590,9 +566,7 @@ class GetAutoFocusResponse(
 
     def _get_sub_value(self) -> dict:
         return (
-            value.get(_AUTO_FOCUS_KEY, None)
-            if (value := self._get_value()) is not None
-            else None
+            value.get(_AUTO_FOCUS_KEY, None) if (value := self._get_value()) is not None else None
         )
 
     channel_id = GetTatternResponse.channel_id
@@ -674,9 +648,7 @@ class _ZoomFocusRange:
 
     def _keyed_factory(self, key: str):
         def _factory() -> dict:
-            return (
-                value.get(key, None) if (value := self._factory()) is not None else None
-            )
+            return value.get(key, None) if (value := self._factory()) is not None else None
 
         return _factory
 
@@ -687,9 +659,7 @@ class _ZoomFocusRange:
         __factory = self._keyed_factory(key)
 
         def _factory() -> dict:
-            return (
-                value.get("pos", None) if (value := __factory()) is not None else None
-            )
+            return value.get("pos", None) if (value := __factory()) is not None else None
 
         return _factory
 
@@ -702,9 +672,7 @@ class _ZoomFocusRange:
         return MinMaxRange("", self._pos_keyed_factory("focus"))
 
 
-class GetZoomFocusResponse(
-    RestCommandResponse, ptz.GetZoomFocusResponse, test="is_response"
-):
+class GetZoomFocusResponse(RestCommandResponse, ptz.GetZoomFocusResponse, test="is_response"):
     """Get Zoom/Focus Response"""
 
     __slots__ = ()
@@ -716,11 +684,7 @@ class GetZoomFocusResponse(
     def _get_sub_value(self, factory: Callable[[], dict] = None):
         if factory is None:
             factory = self._get_value
-        return (
-            value.get(_ZOOMFOCUS_KEY, None)
-            if (value := factory()) is not None
-            else None
-        )
+        return value.get(_ZOOMFOCUS_KEY, None) if (value := factory()) is not None else None
 
     channel_id = GetTatternResponse.channel_id
 

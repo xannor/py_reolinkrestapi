@@ -61,6 +61,11 @@ class CommandRequest(commands.CommandRequest):
     def response_type(self, value):
         self._request[_ACTION_KEY] = value
 
+    def __eq__(self, __o: object) -> bool:
+        if isinstance(__o, CommandRequest):
+            return __o._request == self._request
+        return super().__eq__(__o)
+
 
 _CHANNEL_KEY: Final = "channel"
 
@@ -171,9 +176,7 @@ class UnhandledCommandResponse(CommandResponse):
 _RSP_CODE_KEY: Final = "rspCode"
 
 
-class CommandResponseWithCode(
-    CommandResponse, commands.ResponseCode, test="is_response"
-):
+class CommandResponseWithCode(CommandResponse, commands.ResponseCode, test="is_response"):
     """REST Command Response with code"""
 
     @classmethod
@@ -190,11 +193,7 @@ class CommandResponseWithCode(
 
     @property
     def response_code(self):
-        return (
-            value.get(_RSP_CODE_KEY, 0)
-            if (value := self._get_value()) is not None
-            else 0
-        )
+        return value.get(_RSP_CODE_KEY, 0) if (value := self._get_value()) is not None else 0
 
 
 class CommandResponseWithChannel(CommandResponse, commands.ChannelValue):
@@ -202,9 +201,7 @@ class CommandResponseWithChannel(CommandResponse, commands.ChannelValue):
 
     __slots__ = ("_fallback_channel_id",)
 
-    def __init__(
-        self, response: dict, *_, fallback_channel_id: int = 0, **kwargs
-    ) -> None:
+    def __init__(self, response: dict, *_, fallback_channel_id: int = 0, **kwargs) -> None:
         super().__init__(response, **kwargs)
         self._fallback_channel_id = fallback_channel_id
 
@@ -217,9 +214,7 @@ class CommandResponseWithChannel(CommandResponse, commands.ChannelValue):
         )
 
 
-class CommandErrorResponse(
-    CommandResponse, commands.CommandErrorResponse, test="is_error"
-):
+class CommandErrorResponse(CommandResponse, commands.CommandErrorResponse, test="is_error"):
     """Rest Command Error Response"""
 
     __slots__ = ()
@@ -231,11 +226,7 @@ class CommandErrorResponse(
 
     @property
     def error_code(self) -> int:
-        return (
-            value.get(_RSP_CODE_KEY, 0)
-            if (value := self._get_error()) is not None
-            else 0
-        )
+        return value.get(_RSP_CODE_KEY, 0) if (value := self._get_error()) is not None else 0
 
     @property
     def details(self) -> str | None:
