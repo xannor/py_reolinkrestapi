@@ -4,10 +4,19 @@
 # pylint: disable=too-few-public-methods
 # pylint:disable=missing-function-docstring
 
+from dataclasses import dataclass
 from typing import Callable, Final
 
 from async_reolink.api.security import typing
 from .typing import _LEVELTYPE_STR_MAP, _STR_LEVELTYPE_MAP
+
+
+@dataclass(frozen=True)
+class AuthenticationId(typing.AuthenticationId):
+    """Authentication Id"""
+
+    weak: int = 0
+    strong: int = 0
 
 
 class LoginToken:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from time import time
-from typing import Sequence
+from typing import Final, Sequence
 from urllib.parse import quote_plus
 
 from async_reolink.api.security.mixin import Security as BaseSecurity
@@ -15,7 +15,11 @@ from .command import (
     LoginResponse,
 )
 
+from .models import AuthenticationId
+
 from .typing import WithSecurity
+
+NO_AUTH: Final = AuthenticationId()
 
 
 class Security(BaseSecurity, WithConnection, WithSecurity):
@@ -27,7 +31,7 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
         super().__init__(*args, **kwargs)
         self._force_get_callbacks.append(self.__force_get_login)
         self.__token_expires: float = 0
-        self.__last_pwd_hash = 0
+        self.__auth_id = NO_AUTH
 
     def __force_get_login(self, url: str, _: dict[str, str], commands: Sequence[CommandRequest]):
         if len(commands) > 1 or not isinstance(commands[0], LoginRequest):
@@ -51,18 +55,19 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
 
     @property
     def authentication_id(self):
-        return self.__last_pwd_hash
+        return self.__auth_id
 
-    async def _prelogin(self, username: str):
-        # keep hash of username so we can logout on new info provided
-        pwd_hash = hash(username)
-        if self.__last_pwd_hash != pwd_hash:
-            await self.logout()
-            self.__last_pwd_hash = pwd_hash
+    def _create_authentication_id(self, username: str, password: str = None):
+        weak = hash(username)
+        if not password:
+            return AuthenticationId(weak)
+        return AuthenticationId(weak, weak ^ hash(password))
 
-        if not self.is_connected:
-            return False
-        return True
+    async def login(self, username: str = ..., password: str = ...) -> bool:
+        if await super().login(username, password):
+            self.__auth_id = self._create_authentication_id(username, password)
+            return True
+        return False
 
     async def _process_login(self, response: LoginResponse) -> bool:
         token = response.token
@@ -77,3 +82,4 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
         self.__token = ""
         self.__uri_token = ""
         self.__token_expires = 0
+        self.__auth_id = NO_AUTH
