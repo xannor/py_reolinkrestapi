@@ -6,8 +6,8 @@ import logging
 from types import MappingProxyType
 from typing import Final
 from async_reolink.api.network.typing import LinkTypes
-from async_reolink.api.connection.typing import CommandRequest
-from async_reolink.rest.connection.models import CommandResponse as RestCommandResponse
+from async_reolink.api.connection.model import Request
+from async_reolink.rest.connection.model import Response as RestCommandResponse
 from async_reolink.api.system import mixin as system
 from async_reolink.api.ptz import mixin as ptz
 from async_reolink.api.ai import mixin as ai
@@ -27,13 +27,11 @@ _JSON: Final = MappingProxyType(
 class TestRig(MockConnection, system.System, network.Network, ptz.PTZ, ai.AI):
     """Test Rig"""
 
-    def __init__(
-        self, *args, issue: str, logger: logging.Logger = None, **kwargs
-    ) -> None:
+    def __init__(self, *args, issue: str, logger: logging.Logger = None, **kwargs) -> None:
         super().__init__(*args, logger=logger, **kwargs)
         self._issue = issue
 
-    def _execute(self, *args: CommandRequest):
+    def _execute(self, *args: Request):
         if self._logger is not None:
             self._logger.info("_execute fired")
 

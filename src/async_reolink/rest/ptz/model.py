@@ -5,7 +5,7 @@ from async_reolink.api.ptz import typing
 
 from ..typing import FactoryValue
 
-from ..connection.models import _CHANNEL_KEY
+from ..connection.model import _CHANNEL_KEY
 
 # pylint: disable=missing-function-docstring
 

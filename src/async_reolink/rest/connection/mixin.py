@@ -5,16 +5,13 @@ import inspect
 from json import JSONDecoder, loads as DEFAULT_JSON_DECODER
 import logging
 from typing import (
-    TYPE_CHECKING,
-    cast,
     overload,
 )
-from urllib.parse import urlparse
 import aiohttp
 
-from async_reolink.api.connection.typing import (
-    CommandResponse as BaseCommandResponse,
-    CommandRequest as BaseCommandRequest,
+from async_reolink.api.connection.model import (
+    Response,
+    Request,
 )
 from async_reolink.api.connection.mixin import Connection as BaseConnection
 
@@ -24,16 +21,8 @@ from async_reolink.api.const import DEFAULT_TIMEOUT
 
 from ..const import DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT
 
-from .models import (
-    CommandRequest,
-    CommandResponse,
-    CommandResponseWithCode,
-    CommandErrorResponse,
-    _RSP_CODE_KEY,
-)
+from .model import Response as RestResponse, ErrorResponse, ResponseWithCode
 from .typing import Encryption, SSLContextFactory, SessionFactory, WithConnection
-
-from ..command_factory import CommandFactory
 
 from ..errors import CONNECTION_ERRORS, RESPONSE_ERRORS
 
@@ -70,7 +59,6 @@ class Connection(BaseConnection, WithConnection):
         self.__hostname = ""
         self.__connection_id = 0
         self.__loads = loads
-        self.__commands = CommandFactory()
 
     def _create_session(self, timeout: int):
         return self.__session_factory(self.__base_url, timeout, self.__ssl_context)
@@ -170,12 +158,11 @@ class Connection(BaseConnection, WithConnection):
         self.__hostname = ""
         self.__session = None
 
-    def __process_response(self, value: any, request: CommandRequest = None) -> BaseCommandResponse:
-        if not CommandResponse.is_response(value):
+    def __process_response(self, value: any, request: Request = None) -> Response | None:
+        if not RestResponse.is_response(value):
             raise errors.ReolinkResponseError("Invalid response from device")
-        response = CommandResponse.create_from(value, request)
-        if isinstance(response, CommandErrorResponse):
-            eat = False
+        response = Response.from_response(value, request)
+        if isinstance(response, ErrorResponse):
             for callback in self._error_handlers:
                 if callback(response):
                     return None
@@ -184,7 +171,7 @@ class Connection(BaseConnection, WithConnection):
         #    handler(response)
         return response
 
-    async def __execute(self, *args: CommandRequest):
+    async def __execute(self, *args: Request):
         if not self.is_connected:
             return
 
@@ -335,7 +322,13 @@ class Connection(BaseConnection, WithConnection):
             if command_response is not None:
                 yield command_response
 
-    def _execute(self, *args: BaseCommandRequest):
+    def _execute(self, *args: Request):
         """Internal API"""
 
         return self.__execute(*args)
+
+    def _has_response_code(self, response: Response):
+        return isinstance(response, ResponseWithCode)
+
+    def _is_success_response(self, response: Response):
+        return isinstance(response, ResponseWithCode)

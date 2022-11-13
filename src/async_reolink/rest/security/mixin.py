@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 from time import time
-from typing import Final, Sequence
+from typing import Final, Sequence, TypeGuard
 from urllib.parse import quote_plus
 
+from async_reolink.api.connection.model import Response
 from async_reolink.api.security.mixin import Security as BaseSecurity
 
 from ..connection.typing import WithConnection
 
-from ..connection.models import CommandRequest
-from .command import (
-    LoginRequest,
-    LoginResponse,
-)
+from ..connection.model import Request
 
-from .models import AuthenticationId
+from .model import AuthenticationId
 
 from .typing import WithSecurity
+
+from . import command
 
 NO_AUTH: Final = AuthenticationId()
 
@@ -33,8 +32,8 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
         self.__token_expires: float = 0
         self.__auth_id = NO_AUTH
 
-    def __force_get_login(self, url: str, _: dict[str, str], commands: Sequence[CommandRequest]):
-        if len(commands) > 1 or not isinstance(commands[0], LoginRequest):
+    def __force_get_login(self, url: str, _: dict[str, str], commands: Sequence[Request]):
+        if len(commands) > 1 or not isinstance(commands[0], command.LoginRequest):
             if self.__token:
                 return (False, url + f"?token={self.__uri_token}")
             return
@@ -63,13 +62,19 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
             return AuthenticationId(weak)
         return AuthenticationId(weak, weak ^ hash(password))
 
+    def _create_login(self, username: str, password: str):
+        return command.LoginRequest(username, password)
+
+    def _is_login_response(self, response: Response):
+        return isinstance(response, command.LoginResponse)
+
     async def login(self, username: str = ..., password: str = ...) -> bool:
         if await super().login(username, password):
             self.__auth_id = self._create_authentication_id(username, password)
             return True
         return False
 
-    async def _process_login(self, response: LoginResponse) -> bool:
+    async def _process_login(self, response: command.LoginResponse) -> bool:
         token = response.token
 
         self.__token = token.name
@@ -83,3 +88,12 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
         self.__uri_token = ""
         self.__token_expires = 0
         self.__auth_id = NO_AUTH
+
+    def _create_logout(self):
+        return command.LogoutRequest()
+
+    def _create_get_user(self):
+        return command.GetUserRequest()
+
+    def _is_get_user_response(self, response: Response):
+        return isinstance(response, command.GetUserResponse)

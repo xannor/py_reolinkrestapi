@@ -6,7 +6,7 @@ from async_reolink.api.typing import SimpleTimeValue
 
 from ..typing import FactoryValue
 
-from ..ai.models import AITypesMap, MutableAITypesMap
+from ..ai.model import AITypesMap, MutableAITypesMap
 
 # pylint: disable=missing-function-docstring
 

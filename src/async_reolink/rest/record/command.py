@@ -1,25 +1,23 @@
 """REST Record Commands"""
 
-from datetime import datetime
-from typing import Callable, Final, Sequence, TypeGuard, TypeVar
+from typing import Callable, Final, Sequence, TypeVar
 from async_reolink.api.record import command as record
 from async_reolink.api.record import typing
-from async_reolink.api.connection.typing import CommandResponse
 
-from .models import MutableSearch, SearchStatus, File
+from .model import MutableSearch, SearchStatus, File
 
-from ..connection.models import (
+from ..connection.model import (
     _CHANNEL_KEY,
-    CommandRequest,
-    CommandRequestWithChannel,
-    CommandResponse as RestCommandResponse,
-    CommandResponseTypes,
+    Request,
+    RequestWithChannel,
+    Response as RestResponse,
+    ResponseTypes,
 )
 
 # pylint:disable=missing-function-docstring
 
 
-class GetSnapshotRequest(CommandRequestWithChannel, record.GetSnapshotRequest):
+class GetSnapshotRequest(RequestWithChannel, record.GetSnapshotRequest):
     """REST Get Snaposhot Request"""
 
     COMMAND: Final = "Snap"
@@ -27,7 +25,7 @@ class GetSnapshotRequest(CommandRequestWithChannel, record.GetSnapshotRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -39,7 +37,7 @@ class GetSnapshotRequest(CommandRequestWithChannel, record.GetSnapshotRequest):
         return self._parameter
 
 
-class SearchRecordingsRequest(CommandRequest, record.SearchRecordingsRequest):
+class SearchRecordingsRequest(Request, record.SearchRecordingsRequest):
     """REST Search Recordings Request"""
 
     COMMAND: Final = "Search"
@@ -47,7 +45,7 @@ class SearchRecordingsRequest(CommandRequest, record.SearchRecordingsRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -85,11 +83,7 @@ class SearchRecordingsRequest(CommandRequest, record.SearchRecordingsRequest):
         if self._get_search() is None:
             if not isinstance(value, MutableSearch):
                 value = MutableSearch(value)
-            self._parameter[
-                "Search"
-            ] = value._factory(  # pylint: disable=protected-access
-                True
-            )
+            self._parameter["Search"] = value._factory(True)  # pylint: disable=protected-access
         elif value is not None:
             search = self.search
 
@@ -128,23 +122,19 @@ class _FactorySequence(Sequence[_T]):
         return len(_list)
 
 
-class SearchRecordingsResponse(
-    RestCommandResponse, record.SearchRecordingsResponse, test="is_response"
-):
+class SearchRecordingsResponse(RestResponse, record.SearchRecordingsResponse):
     """REST Search Results"""
+
+    @classmethod
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, SearchRecordingsRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
 
     __slots__ = ()
 
-    @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, SearchRecordingsRequest.COMMAND)
-
     def _get_sub_value(self) -> list:
-        return (
-            value.get("SearchResult", None)
-            if (value := self._get_value()) is not None
-            else None
-        )
+        return value.get("SearchResult", None) if (value := self._get_value()) is not None else None
 
     @property
     def channel_id(self) -> int:
@@ -153,50 +143,15 @@ class SearchRecordingsResponse(
         return value.get(_CHANNEL_KEY, 0)
 
     def _get_status(self) -> list:
-        return (
-            value.get("Status", None)
-            if (value := self._get_sub_value()) is not None
-            else None
-        )
+        return value.get("Status", None) if (value := self._get_sub_value()) is not None else None
 
     @property
     def status(self):
         return _FactorySequence(self._get_status, SearchStatus)
 
     def _get_file(self) -> list:
-        return (
-            value.get("File", None)
-            if (value := self._get_sub_value()) is not None
-            else None
-        )
+        return value.get("File", None) if (value := self._get_sub_value()) is not None else None
 
     @property
     def files(self):
         return _FactorySequence(self._get_file, File)
-
-
-class CommandFactory(record.CommandFactory):
-    """REST Record Command Factory"""
-
-    def create_get_snapshot_request(self, channel_id: int):
-        return GetSnapshotRequest(channel_id)
-
-    def create_search_request(
-        self,
-        channel_id: int,
-        start_time: datetime,
-        end_time: datetime,
-        only_status: bool,
-        stream_type: typing.StreamTypes,
-    ):
-        request = SearchRecordingsRequest(channel_id)
-        request.search.start = start_time
-        request.search.end = end_time
-        request.search.status_only = only_status
-        request.search.stream_type = stream_type
-        return request
-
-    def is_search_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[SearchRecordingsResponse]:
-        return isinstance(response, SearchRecordingsResponse)

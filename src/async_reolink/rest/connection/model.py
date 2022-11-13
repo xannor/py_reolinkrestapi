@@ -3,12 +3,11 @@
 from abc import ABC
 from enum import IntEnum
 from typing import (
-    Callable,
     Final,
     TypeGuard,
 )
 
-from async_reolink.api.connection import typing as commands
+from async_reolink.api.connection import model, typing
 
 _COMMAND_KEY: Final = "cmd"
 _ACTION_KEY: Final = "action"
@@ -16,19 +15,22 @@ _ACTION_KEY: Final = "action"
 # pylint: disable=missing-function-docstring
 
 
-class CommandResponseTypes(IntEnum):
-    """Command Response Types"""
+class ResponseTypes(IntEnum):
+    """Response Types"""
 
     VALUE_ONLY = 0
     DETAILED = 1
 
 
-class CommandRequest(commands.CommandRequest):
-    """Rest Command Request"""
+class Request(model.Request):
+    """Rest Request"""
 
     __slots__ = ("_request",)
 
+    id = property(id)
+
     def __init__(self):
+        super().__init__()
         self._request = {}
 
     def _get_request(self):
@@ -54,24 +56,19 @@ class CommandRequest(commands.CommandRequest):
         self._request[_COMMAND_KEY] = value
 
     @property
-    def response_type(self) -> CommandResponseTypes:
-        return self._request.get(_ACTION_KEY, CommandResponseTypes.VALUE_ONLY)
+    def response_type(self) -> ResponseTypes:
+        return self._request.get(_ACTION_KEY, ResponseTypes.VALUE_ONLY)
 
     @response_type.setter
     def response_type(self, value):
         self._request[_ACTION_KEY] = value
 
-    def __eq__(self, __o: object) -> bool:
-        if isinstance(__o, CommandRequest):
-            return __o._request == self._request
-        return super().__eq__(__o)
-
 
 _CHANNEL_KEY: Final = "channel"
 
 
-class CommandRequestWithChannel(CommandRequest, commands.ChannelValue):
-    """Rest Command Request with Channel Parameter"""
+class RequestWithChannel(Request, typing.ChannelValue):
+    """Rest Request with Channel Parameter"""
 
     __slots__ = ()
 
@@ -93,31 +90,8 @@ _CODE_KEY: Final = "code"
 _ERROR_KEY: Final = "error"
 
 
-class CommandResponse(commands.CommandResponse, ABC):
-    """Rest Command Response"""
-
-    _response_handlers: dict[type["CommandResponse"], Callable[[dict], bool]] = {}
-
-    def __init_subclass__(  # pylint: disable=arguments-differ
-        cls, test: str = None, **kwargs
-    ) -> None:
-        super().__init_subclass__(**kwargs)
-        if (
-            isinstance(test, str)
-            and (call := getattr(cls, test, None)) is not None
-            and callable(call)
-        ):
-            cls._response_handlers[cls] = call
-
-    @classmethod
-    def create_from(cls, value: dict, request: CommandRequest = None):
-        """wrap response in CommandResponse Implementation"""
-
-        for (_type, test) in cls._response_handlers.items():
-            if test(value):
-                return _type(value, request=request)
-
-        return CommandResponse(value)
+class Response(model.Response, ABC):
+    """Rest Response"""
 
     @classmethod
     def is_response(cls, value: any, /, command: str | None = None) -> TypeGuard[dict]:
@@ -134,10 +108,16 @@ class CommandResponse(commands.CommandResponse, ABC):
         """response is a command value response"""
         return _VALUE_KEY in response and isinstance(response[_VALUE_KEY], dict)
 
-    __slots__ = ("_response",)
+    __slots__ = ("_response", "_request_id")
 
-    def __init__(self, response: dict, **kwargs) -> None:
+    def __init__(self, response: dict, /, request_id: int | None = None) -> None:
+        super().__init__()
         self._response = response
+        self._request_id = request_id
+
+    @property
+    def request_id(self):
+        return self._request_id
 
     def _underlying_value(self):
         return self._response
@@ -167,7 +147,7 @@ class CommandResponse(commands.CommandResponse, ABC):
         return self._response.get(_ERROR_KEY, None)
 
 
-class UnhandledCommandResponse(CommandResponse):
+class UnhandledResponse(Response):
     """Unhandled/Unknown REST Command Response"""
 
     __slots__ = ()
@@ -176,18 +156,18 @@ class UnhandledCommandResponse(CommandResponse):
 _RSP_CODE_KEY: Final = "rspCode"
 
 
-class CommandResponseWithCode(CommandResponse, commands.ResponseCode, test="is_response"):
+class ResponseWithCode(Response, typing.ResponseCode):
     """REST Command Response with code"""
 
     @classmethod
-    def is_response(  # pylint: disable=signature-differs
-        cls, value: any, /
-    ) -> TypeGuard["CommandResponseWithCode"]:
-        return (
-            super().is_response(value)
-            and super().is_value(value)
-            and _RSP_CODE_KEY in value[_VALUE_KEY]
-        )
+    def from_response(cls, response: any, request: Request | None = None):
+        if (
+            super().is_response(response, command=request.command if request else None)
+            and super().is_value(response)
+            and _RSP_CODE_KEY in response[_VALUE_KEY]
+        ):
+            return cls(response, request.id if request else None)
+        return None
 
     __slots__ = ()
 
@@ -196,28 +176,44 @@ class CommandResponseWithCode(CommandResponse, commands.ResponseCode, test="is_r
         return value.get(_RSP_CODE_KEY, 0) if (value := self._get_value()) is not None else 0
 
 
-class CommandResponseWithChannel(CommandResponse, commands.ChannelValue):
-    """Rest Command Response Value with Channel"""
+class ResponseWithChannel(Response, typing.ChannelValue, ABC):
+    """Rest Response Value with Channel"""
 
     __slots__ = ("_fallback_channel_id",)
 
-    def __init__(self, response: dict, *_, fallback_channel_id: int = 0, **kwargs) -> None:
-        super().__init__(response, **kwargs)
-        self._fallback_channel_id = fallback_channel_id
+    def __init__(
+        self,
+        response: dict,
+        /,
+        request_id: int | None = None,
+        fallback_channel_id: int | None = None,
+    ) -> None:
+        super().__init__(response, request_id)
+        self._fallback_channel_id = fallback_channel_id or 0
 
     @property
     def channel_id(self):
         return (
-            value.get(_CHANNEL_KEY, 0)
+            value.get(_CHANNEL_KEY, self._fallback_channel_id)
             if (value := self._get_value()) is not None
             else self._fallback_channel_id
         )
 
 
-class CommandErrorResponse(CommandResponse, commands.CommandErrorResponse, test="is_error"):
-    """Rest Command Error Response"""
+class ErrorResponse(Response, model.ErrorResponse):
+    """Rest Error Response"""
 
     __slots__ = ()
+
+    @classmethod
+    def from_response(cls, response: any, request: Request | None = None):
+        if (
+            super().is_response(response)
+            and _ERROR_KEY in response
+            and isinstance(response[_ERROR_KEY], dict)
+        ):
+            return cls(response, request.id if request else None)
+        return None
 
     @classmethod
     def is_error(cls, response: dict):

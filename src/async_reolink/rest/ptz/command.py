@@ -6,12 +6,10 @@ from typing import (
     Final,
     Iterable,
     MutableSequence,
-    TypeGuard,
     cast,
 )
 from async_reolink.api.ptz import command as ptz
 from async_reolink.api.ptz import typing
-from async_reolink.api.connection.typing import CommandResponse
 
 from .._utilities.dictlist import DictList
 
@@ -24,7 +22,7 @@ from .typing import (
     ZOOMOPERATION_STR_MAP,
 )
 
-from .models import (
+from .model import (
     MutablePreset,
     Preset,
     _ID_KEY,
@@ -37,18 +35,18 @@ from .models import (
 
 from ..typing import FactoryValue
 
-from ..connection.models import (
+from ..connection.model import (
     _CHANNEL_KEY,
-    CommandRequest,
-    CommandRequestWithChannel,
-    CommandResponse as RestCommandResponse,
-    CommandResponseTypes,
+    Request,
+    RequestWithChannel,
+    Response as RestCommandResponse,
+    ResponseTypes,
 )
 
 # pylint:disable=missing-function-docstring
 
 
-class GetPresetRequest(CommandRequestWithChannel, ptz.GetPresetRequest):
+class GetPresetRequest(RequestWithChannel, ptz.GetPresetRequest):
     """REST Get Presets Request"""
 
     __slots__ = ()
@@ -58,7 +56,7 @@ class GetPresetRequest(CommandRequestWithChannel, ptz.GetPresetRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -93,14 +91,16 @@ class _PresetRange:
         return StringRange(self._keyed_factory("name"))
 
 
-class GetPresetResponse(RestCommandResponse, ptz.GetPresetResponse, test="is_response"):
+class GetPresetResponse(RestCommandResponse, ptz.GetPresetResponse):
     """Get Presets Response"""
 
-    __slots__ = ()
-
     @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetPresetRequest.COMMAND)
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetPresetRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
+
+    __slots__ = ()
 
     def _get_sub_value(self, factory: Callable[[], dict]) -> list:
         return value.get(_PRESET_KEY, None) if (value := factory()) is not None else None
@@ -130,7 +130,7 @@ class GetPresetResponse(RestCommandResponse, ptz.GetPresetResponse, test="is_res
         return _PresetRange(value)
 
 
-class SetPresetRequest(CommandRequest, ptz.SetPresetRequest):
+class SetPresetRequest(Request, ptz.SetPresetRequest):
     """Set Preset Request"""
 
     __slots__ = ()
@@ -141,7 +141,7 @@ class SetPresetRequest(CommandRequest, ptz.SetPresetRequest):
         self,
         preset: typing.Preset = None,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -187,7 +187,7 @@ class SetPresetRequest(CommandRequest, ptz.SetPresetRequest):
 _PATROL_KEY: Final = "PtzPatrol"
 
 
-class GetPatrolRequest(CommandRequestWithChannel, ptz.GetPatrolRequest):
+class GetPatrolRequest(RequestWithChannel, ptz.GetPatrolRequest):
     """Get Patrol"""
 
     __slots__ = ()
@@ -197,7 +197,7 @@ class GetPatrolRequest(CommandRequestWithChannel, ptz.GetPatrolRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -258,14 +258,16 @@ class _PatrolRange:
         return _PatrolPresetRange(self._keyed_factory("preset"))
 
 
-class GetPatrolResponse(RestCommandResponse, ptz.GetPatrolResponse, test="is_response"):
+class GetPatrolResponse(RestCommandResponse, ptz.GetPatrolResponse):
     """Get Patrol Response"""
 
-    __slots__ = ()
-
     @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetPatrolRequest.COMMAND)
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetPatrolRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
+
+    __slots__ = ()
 
     def _get_sub_value(self, factory: Callable[[], dict]) -> list:
         return value.get(_PATROL_KEY, None) if (value := factory()) is not None else None
@@ -287,7 +289,7 @@ class GetPatrolResponse(RestCommandResponse, ptz.GetPatrolResponse, test="is_res
         return _PatrolRange(value)
 
 
-class SetPatrolRequest(CommandRequest, ptz.SetPatrolRequest):
+class SetPatrolRequest(Request, ptz.SetPatrolRequest):
     """Set  Patrol"""
 
     __slots__ = ()
@@ -298,7 +300,7 @@ class SetPatrolRequest(CommandRequest, ptz.SetPatrolRequest):
         self,
         patrol: typing.Patrol = None,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -334,7 +336,7 @@ class SetPatrolRequest(CommandRequest, ptz.SetPatrolRequest):
 _TATTERN_KEY: Final = "PtzTattern"
 
 
-class GetTatternRequest(CommandRequestWithChannel, ptz.GetTatternRequest):
+class GetTatternRequest(RequestWithChannel, ptz.GetTatternRequest):
     """Get Tattern"""
 
     __slots__ = ()
@@ -344,7 +346,7 @@ class GetTatternRequest(CommandRequestWithChannel, ptz.GetTatternRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -396,11 +398,13 @@ class _TracksRange:
 class GetTatternResponse(RestCommandResponse, ptz.GetTatternResponse):
     """Get Tattern Response"""
 
-    __slots__ = ()
-
     @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetTatternRequest.COMMAND)
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetTatternRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
+
+    __slots__ = ()
 
     def _get_sub_value(self) -> dict:
         return value.get(_TATTERN_KEY, None) if (value := self._get_value()) is not None else None
@@ -475,7 +479,7 @@ class _MutableTracks(MutableSequence[MutableTrack]):
         return len(value)
 
 
-class SetTatternRequest(CommandRequest, ptz.SetTatternRequest):
+class SetTatternRequest(Request, ptz.SetTatternRequest):
     """Set PTZ Tattern"""
 
     __slots__ = ()
@@ -486,7 +490,7 @@ class SetTatternRequest(CommandRequest, ptz.SetTatternRequest):
         self,
         *tracks: typing.Track,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -533,7 +537,7 @@ class SetTatternRequest(CommandRequest, ptz.SetTatternRequest):
             _tracks.append(track)
 
 
-class GetAutoFocusRequest(CommandRequestWithChannel, ptz.GetAutoFocusRequest):
+class GetAutoFocusRequest(RequestWithChannel, ptz.GetAutoFocusRequest):
     """Get PTZ AutoFocus"""
 
     __slots__ = ()
@@ -543,7 +547,7 @@ class GetAutoFocusRequest(CommandRequestWithChannel, ptz.GetAutoFocusRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -555,14 +559,16 @@ _AUTO_FOCUS_KEY: Final = "AutoFocus"
 _DISABLE_KEY: Final = "disable"
 
 
-class GetAutoFocusResponse(RestCommandResponse, ptz.GetAutoFocusResponse, test="is_response"):
+class GetAutoFocusResponse(RestCommandResponse, ptz.GetAutoFocusResponse):
     """Get PTZ AutoFocus Response"""
 
-    __slots__ = ()
-
     @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetAutoFocusRequest.COMMAND)
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetAutoFocusRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
+
+    __slots__ = ()
 
     def _get_sub_value(self) -> dict:
         return (
@@ -578,7 +584,7 @@ class GetAutoFocusResponse(RestCommandResponse, ptz.GetAutoFocusResponse, test="
         return value.get(_DISABLE_KEY, 0)
 
 
-class SetAutoFocusRequest(CommandRequestWithChannel, ptz.SetAutoFocusRequest):
+class SetAutoFocusRequest(RequestWithChannel, ptz.SetAutoFocusRequest):
     """Set PTZ AutoFocus"""
 
     __slots__ = ()
@@ -589,7 +595,7 @@ class SetAutoFocusRequest(CommandRequestWithChannel, ptz.SetAutoFocusRequest):
         self,
         disabled: bool,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -616,7 +622,7 @@ class SetAutoFocusRequest(CommandRequestWithChannel, ptz.SetAutoFocusRequest):
         self._sub_value[_DISABLE_KEY] = int(value)
 
 
-class GetZoomFocusRequest(CommandRequestWithChannel, ptz.GetZoomFocusRequest):
+class GetZoomFocusRequest(RequestWithChannel, ptz.GetZoomFocusRequest):
     """Get Zoom and Focus"""
 
     __slots__ = ()
@@ -626,7 +632,7 @@ class GetZoomFocusRequest(CommandRequestWithChannel, ptz.GetZoomFocusRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -672,14 +678,16 @@ class _ZoomFocusRange:
         return MinMaxRange("", self._pos_keyed_factory("focus"))
 
 
-class GetZoomFocusResponse(RestCommandResponse, ptz.GetZoomFocusResponse, test="is_response"):
+class GetZoomFocusResponse(RestCommandResponse, ptz.GetZoomFocusResponse):
     """Get Zoom/Focus Response"""
 
-    __slots__ = ()
-
     @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetZoomFocusRequest.COMMAND)
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetZoomFocusRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
+
+    __slots__ = ()
 
     def _get_sub_value(self, factory: Callable[[], dict] = None):
         if factory is None:
@@ -705,7 +713,7 @@ _DEFAULT_ZOOMOPERATION: Final = typing.ZoomOperation.ZOOM
 _DEFAULT_ZOOMOPERATION_STR: Final = ZOOMOPERATION_STR_MAP[_DEFAULT_ZOOMOPERATION]
 
 
-class SetZoomFocusRequest(CommandRequest, ptz.SetZoomFocusRequest):
+class SetZoomFocusRequest(Request, ptz.SetZoomFocusRequest):
     """Set Zoom or Focus"""
 
     __slots__ = ()
@@ -717,7 +725,7 @@ class SetZoomFocusRequest(CommandRequest, ptz.SetZoomFocusRequest):
         operation: typing.ZoomOperation,
         position: int,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -765,7 +773,7 @@ _DEFAULT_OPERATION: Final = typing.Operation.AUTO
 _DEFAULT_OPERATION_STR: Final = OPERATION_STR_MAP[_DEFAULT_OPERATION]
 
 
-class SetControlRequest(CommandRequestWithChannel, ptz.SetControlRequest):
+class SetControlRequest(RequestWithChannel, ptz.SetControlRequest):
     """PTZ Control"""
 
     __slots__ = ()
@@ -778,7 +786,7 @@ class SetControlRequest(CommandRequestWithChannel, ptz.SetControlRequest):
         preset_id: int = None,
         speed: int = None,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -825,73 +833,3 @@ class SetControlRequest(CommandRequestWithChannel, ptz.SetControlRequest):
                 del _value["speed"]
             return
         self._parameter["speed"] = value
-
-
-class CommandFactory(ptz.CommandFactory):
-    """REST PTZ Command Factory"""
-
-    def create_get_ptz_presets_request(self, channel_id: int):
-        return GetPresetRequest(channel_id)
-
-    def is_get_ptz_presets_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetPresetResponse]:
-        return isinstance(response, GetPresetResponse)
-
-    def create_set_ptz_preset_request(self, channel_id: int, preset: Preset):
-        return SetPresetRequest(preset, channel_id)
-
-    def create_get_ptz_patrols_request(self, channel_id: int):
-        return GetPatrolRequest(channel_id)
-
-    def is_get_ptz_patrols_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetPatrolResponse]:
-        return isinstance(response, GetPatrolResponse)
-
-    def create_set_ptz_patrol_request(self, channel_id: int, patrol: Patrol):
-        return SetPatrolRequest(patrol, channel_id)
-
-    def create_get_ptz_tatterns_request(self, channel_id: int):
-        return GetTatternRequest(channel_id)
-
-    def is_get_ptz_tatterns_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetTatternResponse]:
-        return isinstance(response, GetTatternResponse)
-
-    def _create_set_ptz_tatterns_request(self, channel_id: int, *track: Track):
-        return SetTatternRequest(track, channel_id=channel_id)
-
-    def create_set_ptz_control_request(
-        self,
-        channel_id: int,
-        operation: typing.Operation,
-        speed: int | None,
-        preset_id: int | None,
-    ):
-        return SetControlRequest(operation, preset_id, speed, channel_id)
-
-    def create_get_ptz_autofocus_request(self, channel_id: int):
-        return GetAutoFocusRequest(channel_id)
-
-    def is_get_ptz_autofocus_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetAutoFocusResponse]:
-        return isinstance(response, GetAutoFocusResponse)
-
-    def create_set_ptz_autofocus_request(self, channel_id: int, disabled: bool):
-        return SetAutoFocusRequest(disabled, channel_id)
-
-    def create_get_ptz_zoom_focus_request(self, channel_id: int):
-        return GetZoomFocusRequest(channel_id)
-
-    def is_get_ptz_zoom_focus_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetZoomFocusResponse]:
-        return isinstance(response, GetZoomFocusResponse)
-
-    def create_set_ptz_zoom_focus_request(
-        self, channel_id: int, operation: typing.ZoomOperation, position: int
-    ):
-        return SetZoomFocusRequest(operation, position, channel_id)

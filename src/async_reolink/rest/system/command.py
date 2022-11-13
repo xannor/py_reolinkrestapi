@@ -1,17 +1,16 @@
 """System REST Commands"""
 
-from typing import Final, TypeGuard
+from typing import Final
 from async_reolink.api.system import command as system
-from async_reolink.api.connection.typing import CommandResponse
 
 from .._utilities.dictlist import DictList
 
-from .models import DaylightSavingsTimeInfo, DeviceInfo, TimeInfo, StorageInfo
+from .model import DaylightSavingsTimeInfo, DeviceInfo, TimeInfo, StorageInfo
 
-from ..connection.models import (
-    CommandRequest,
-    CommandResponseTypes,
-    CommandResponse as RestCommandResponse,
+from ..connection.model import (
+    Request,
+    ResponseTypes,
+    Response as RestResponse,
 )
 
 from .capabilities import Capabilities
@@ -20,7 +19,7 @@ from .capabilities import Capabilities
 # pylint: disable=too-few-public-methods
 
 
-class GetAbilitiesRequest(CommandRequest, system.GetAbilitiesRequest):
+class GetAbilitiesRequest(Request, system.GetAbilitiesRequest):
     """REST Get Capabilities Request"""
 
     __slots__ = ()
@@ -29,13 +28,13 @@ class GetAbilitiesRequest(CommandRequest, system.GetAbilitiesRequest):
 
     def __init__(
         self,
-        username: str,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        username: str | None,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ) -> None:
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
-        self.user_name = username
+        self.user_name = username or "NULL"
 
     def _get_user(self, create=False) -> dict:
         _key: Final = "User"
@@ -51,32 +50,26 @@ class GetAbilitiesRequest(CommandRequest, system.GetAbilitiesRequest):
 
     @property
     def user_name(self) -> str:
-        return (
-            value.get("userName", "") if (value := self._get_user()) is not None else ""
-        )
+        return value.get("userName", "") if (value := self._get_user()) is not None else ""
 
     @user_name.setter
     def user_name(self, value):
         self._user["userName"] = value
 
 
-class GetAbilitiesResponse(
-    RestCommandResponse, system.GetAbilitiesResponse, test="is_response"
-):
+class GetAbilitiesResponse(RestResponse, system.GetAbilitiesResponse):
     """REST Get Capability Response"""
+
+    @classmethod
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetAbilitiesRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
 
     __slots__ = ()
 
-    @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetAbilitiesRequest.COMMAND)
-
     def _get_ability(self) -> dict:
-        return (
-            value.get("Ability", None)
-            if (value := self._get_value()) is not None
-            else None
-        )
+        return value.get("Ability", None) if (value := self._get_value()) is not None else None
 
     @property
     def capabilities(self):
@@ -84,36 +77,30 @@ class GetAbilitiesResponse(
         return Capabilities(self._get_ability())
 
 
-class GetDeviceInfoRequest(CommandRequest, system.GetDeviceInfoRequest):
+class GetDeviceInfoRequest(Request, system.GetDeviceInfoRequest):
     """REST Get Device Info Request"""
 
     COMMAND: Final = "GetDevInfo"
 
-    def __init__(
-        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
-    ) -> None:
+    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
 
 
-class GetDeviceInfoResponse(
-    RestCommandResponse, system.GetDeviceInfoResponse, test="is_response"
-):
+class GetDeviceInfoResponse(RestResponse, system.GetDeviceInfoResponse):
     """REST Get Device Info Response"""
+
+    @classmethod
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetDeviceInfoRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
 
     __slots__ = ()
 
-    @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetDeviceInfoRequest.COMMAND)
-
     def _get_info(self) -> dict:
-        return (
-            value.get("DevInfo", None)
-            if (value := self._get_value()) is not None
-            else None
-        )
+        return value.get("DevInfo", None) if (value := self._get_value()) is not None else None
 
     @property
     def info(self):
@@ -122,136 +109,83 @@ class GetDeviceInfoResponse(
         return DeviceInfo(self._get_info())
 
 
-class GetTimeRequest(CommandRequest, system.GetTimeRequest):
+class GetTimeRequest(Request, system.GetTimeRequest):
     """REST Get Time Request"""
 
     COMMAND: Final = "GetTime"
 
-    def __init__(
-        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
-    ) -> None:
+    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
 
 
-class GetTimeResponse(RestCommandResponse, system.GetTimeResponse, test="is_response"):
+class GetTimeResponse(RestResponse, system.GetTimeResponse):
     """REST Get Time Response"""
+
+    @classmethod
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetTimeRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
 
     __slots__ = ()
 
-    @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetTimeRequest.COMMAND)
-
     def _get_dst(self) -> dict:
-        return (
-            value.get("Dst", None) if (value := self._get_value()) is not None else None
-        )
+        return value.get("Dst", None) if (value := self._get_value()) is not None else None
 
     @property
     def dst(self):
         return DaylightSavingsTimeInfo(self._get_dst)
 
     def _get_time(self) -> dict:
-        return (
-            value.get("Time", None)
-            if (value := self._get_value()) is not None
-            else None
-        )
+        return value.get("Time", None) if (value := self._get_value()) is not None else None
 
     @property
     def time(self):
         return TimeInfo(self._get_time)
 
 
-class RebootRequest(CommandRequest, system.RebootRequest):
+class RebootRequest(Request, system.RebootRequest):
     """REST Reboot Request"""
 
     __slots__ = ()
 
     COMMAND: Final = "Reboot"
 
-    def __init__(
-        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
-    ) -> None:
+    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
 
 
-class GetHddInfoRequest(CommandRequest, system.GetHddInfoRequest):
+class GetHddInfoRequest(Request, system.GetHddInfoRequest):
     """REST Get HDD Info Request"""
 
     __slots__ = ()
 
     COMMAND: Final = "GetHddInfo"
 
-    def __init__(
-        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
-    ) -> None:
+    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
 
 
-class GetHddInfoResponse(
-    RestCommandResponse, system.GetHddInfoResponse, test="is_response"
-):
+class GetHddInfoResponse(RestResponse, system.GetHddInfoResponse):
     """REST Get HDD Info Response"""
+
+    @classmethod
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetHddInfoRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
 
     __slots__ = ()
 
-    @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetHddInfoRequest.COMMAND)
-
     def _get_info(self) -> list:
-        return (
-            value.get("HddInfo", None)
-            if (value := self._get_value()) is not None
-            else None
-        )
+        return value.get("HddInfo", None) if (value := self._get_value()) is not None else None
 
     @property
     def info(self):
         return DictList("number", self._get_info(), StorageInfo)
-
-
-class CommandFactory(system.CommandFactory):
-    """REST System Command Factory"""
-
-    def create_get_capabilities_request(self, username: str | None):
-        return GetAbilitiesRequest(username)
-
-    def is_get_capabilities_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetAbilitiesResponse]:
-        return isinstance(response, GetAbilitiesResponse)
-
-    def create_get_device_info_request(self):
-        return GetDeviceInfoRequest()
-
-    def is_get_device_info_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetDeviceInfoResponse]:
-        return isinstance(response, GetDeviceInfoResponse)
-
-    def create_get_time_request(self):
-        return GetTimeRequest()
-
-    def is_get_time_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetTimeResponse]:
-        return isinstance(response, GetTimeResponse)
-
-    def create_reboot_request(self):
-        return RebootRequest()
-
-    def create_get_hdd_info_request(self):
-        return GetHddInfoRequest()
-
-    def is_get_hdd_info_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetHddInfoResponse]:
-        return isinstance(response, GetHddInfoResponse)

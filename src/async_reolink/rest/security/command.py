@@ -1,17 +1,16 @@
 """Secuirty REST Commands"""
 
-from typing import TYPE_CHECKING, Callable, Final, Sequence, TypeGuard, cast
+from typing import TYPE_CHECKING, Callable, Final, Sequence, cast
 from async_reolink.api.security import command as security, typing
-from async_reolink.api.connection.typing import CommandResponse
 
-from ..connection.models import (
-    CommandRequest,
-    CommandResponseTypes,
-    CommandResponse as RestCommandResponse,
+from ..connection.model import (
+    Request,
+    ResponseTypes,
+    Response as RestResponse,
 )
 
 
-from .models import LoginToken, UserInfo
+from .model import LoginToken, UserInfo
 from .typing import _STR_LEVELTYPE_MAP
 
 from ..models import StringRange
@@ -19,7 +18,7 @@ from ..models import StringRange
 # pylint:disable=missing-function-docstring
 
 
-class LoginRequest(CommandRequest, security.LoginRequest):
+class LoginRequest(Request, security.LoginRequest):
     """REST Login Request"""
 
     __slots__ = ()
@@ -30,7 +29,7 @@ class LoginRequest(CommandRequest, security.LoginRequest):
         self,
         user_name: str,
         password: str,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ) -> None:
         super().__init__()
         self.command = type(self).COMMAND
@@ -52,11 +51,7 @@ class LoginRequest(CommandRequest, security.LoginRequest):
 
     @property
     def user_name(self) -> str:
-        return (
-            value.get("userName", "")
-            if (value := self._get_login()) is not None
-            else ""
-        )
+        return value.get("userName", "") if (value := self._get_login()) is not None else ""
 
     @user_name.setter
     def user_name(self, value):
@@ -64,48 +59,40 @@ class LoginRequest(CommandRequest, security.LoginRequest):
 
     @property
     def password(self) -> str:
-        return (
-            value.get("password", "")
-            if (value := self._get_login()) is not None
-            else ""
-        )
+        return value.get("password", "") if (value := self._get_login()) is not None else ""
 
     @password.setter
     def password(self, value):
         self._login["password"] = value
 
 
-class LoginResponse(RestCommandResponse, security.LoginResponse, test="is_response"):
+class LoginResponse(RestResponse, security.LoginResponse):
     """REST Login Response"""
+
+    @classmethod
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, LoginRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
 
     __slots__ = ()
 
-    @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, LoginRequest.COMMAND)
-
     def _get_token(self) -> dict:
-        return (
-            value.get("Token", None)
-            if (value := self._get_value()) is not None
-            else None
-        )
+        return value.get("Token", None) if (value := self._get_value()) is not None else None
 
     @property
     def token(self):
         return LoginToken(self._get_token)
 
 
-class LogoutRequest(CommandRequest, security.LogoutRequest):
+class LogoutRequest(Request, security.LogoutRequest):
     """REST Logut Request"""
 
     __slots__ = ()
 
     COMMAND: Final = "Logout"
 
-    def __init__(
-        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
-    ) -> None:
+    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
@@ -163,16 +150,14 @@ class _UserRange:
         return StringRange(self._get_keyed("password"))
 
 
-class GetUserRequest(CommandRequest, security.GetUserRequest):
+class GetUserRequest(Request, security.GetUserRequest):
     """REST Get User(s) Request"""
 
     __slots__ = ()
 
     COMMAND: Final = "GetUser"
 
-    def __init__(
-        self, response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY
-    ) -> None:
+    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
@@ -201,16 +186,16 @@ class _Users(Sequence[UserInfo]):
         return len(self._value)
 
 
-class GetUserResponse(
-    RestCommandResponse, security.GetUserResponse, test="is_response"
-):
+class GetUserResponse(RestResponse, security.GetUserResponse):
     """REST Get Users(s) Response"""
 
-    __slots__ = ()
-
     @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetUserRequest.COMMAND)
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, GetUserRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
+
+    __slots__ = ()
 
     def _get_user(self, factory: Callable[[], dict]) -> dict:
         def _factory():
@@ -229,24 +214,3 @@ class GetUserResponse(
     @property
     def range(self):
         return _UserRange(self._get_user(self._get_range))
-
-
-class CommandFactory(security.CommandFactory):
-    """REST Security Command Factory"""
-
-    def create_login_request(self, username: str, password: str):
-        return LoginRequest(username, password)
-
-    def is_login_response(self, response: CommandResponse) -> TypeGuard[LoginResponse]:
-        return isinstance(response, LoginResponse)
-
-    def create_logout_request(self):
-        return LogoutRequest()
-
-    def create_get_user_request(self):
-        return GetUserRequest()
-
-    def is_get_user_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetUserResponse]:
-        return isinstance(response, GetUserResponse)

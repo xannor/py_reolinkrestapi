@@ -104,17 +104,35 @@ class Capability(capabilities.Capability[_T]):
         return _INT_PERMISSION_MAP.get(value.get("permit", 0), _NO_PERMISSIONS)
 
     def __bool__(self):
-        if self.permissions is None:
+        if (
+            self.permissions is None
+            or capabilities.Permissions.READ not in self.permissions
+        ):
             return False
         return bool(self._get_value())
 
     def __index__(self):
+        if (
+            self.permissions is None
+            or capabilities.Permissions.READ not in self.permissions
+        ):
+            return 0
         return self._get_value()
 
     def __int__(self):
+        if (
+            self.permissions is None
+            or capabilities.Permissions.READ not in self.permissions
+        ):
+            return 0
         return self._get_value()
 
     def __str__(self):
+        if (
+            self.permissions is None
+            or capabilities.Permissions.READ not in self.permissions
+        ):
+            return ""
         return str(self.value)
 
     def __eq__(self, __o: object) -> bool:

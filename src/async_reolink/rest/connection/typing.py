@@ -7,7 +7,7 @@ from typing import Callable, Literal, Protocol, Sequence
 
 import aiohttp
 
-from async_reolink.api.connection.typing import CommandRequest
+from async_reolink.api.connection.model import Request
 
 
 class Encryption(IntEnum):
@@ -25,9 +25,7 @@ class SSLContextFactory(Protocol):
     otherwise return a Fignerprint or full SSLContext
     """
 
-    def __call__(
-        self, base_url: str
-    ) -> Literal[False] | aiohttp.Fingerprint | SSLContext:
+    def __call__(self, base_url: str) -> Literal[False] | aiohttp.Fingerprint | SSLContext:
         ...
 
 
@@ -43,6 +41,4 @@ class SessionFactory(Protocol):
 class WithConnection(Protocol):
     """Connection Part"""
 
-    _force_get_callbacks: list[
-        Callable[[str, dict[str, str], Sequence[CommandRequest]], any]
-    ]
+    _force_get_callbacks: list[Callable[[str, dict[str, str], Sequence[Request]], any]]

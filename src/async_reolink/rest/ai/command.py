@@ -2,24 +2,24 @@
 
 from typing import Final, TypeGuard
 
+from async_reolink.api.connection.model import Request
 from async_reolink.api.ai import command as ai
-from async_reolink.api.connection.typing import CommandResponse
 
-from . import models
+from . import model
 
 
-from ..connection.models import (
+from ..connection.model import (
     _CHANNEL_KEY,
-    CommandResponse as RestCommandResponse,
-    CommandResponseTypes,
-    CommandRequestWithChannel,
-    CommandResponseWithChannel,
+    Response,
+    ResponseTypes,
+    RequestWithChannel,
+    ResponseWithChannel,
 )
 
 # pylint:disable=missing-function-docstring
 
 
-class GetAiStateRequest(CommandRequestWithChannel, ai.GetAiStateRequest):
+class GetAiStateRequest(RequestWithChannel, ai.GetAiStateRequest):
     """Get AI State"""
 
     __slots__ = ()
@@ -29,7 +29,7 @@ class GetAiStateRequest(CommandRequestWithChannel, ai.GetAiStateRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -41,17 +41,18 @@ _NONE_DICT: Final[dict] = None
 
 
 class GetAiStateResponse(
-    RestCommandResponse,
+    Response,
     ai.GetAiStateResponse,
-    test="is_response",
 ):
     """Get AI State Response"""
 
     __slots__ = ()
 
     @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetAiStateRequest.COMMAND)
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, command=GetAiStateRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
 
     @property
     def channel_id(self) -> int:
@@ -61,14 +62,14 @@ class GetAiStateResponse(
 
     @property
     def state(self):
-        return models.State(self._get_value())
+        return model.State(self._get_value())
 
-    def can_update(self, value: any) -> TypeGuard[models.State]:
+    def can_update(self, value: any) -> TypeGuard[model.State]:
         """Is value updatable"""
-        return isinstance(value, models.State)
+        return isinstance(value, model.State)
 
 
-class GetAiConfigRequest(CommandRequestWithChannel, ai.GetAiConfigRequest):
+class GetAiConfigRequest(RequestWithChannel, ai.GetAiConfigRequest):
     """Get AI Configuration"""
 
     COMMAND: Final = "GetAiCfg"
@@ -76,7 +77,7 @@ class GetAiConfigRequest(CommandRequestWithChannel, ai.GetAiConfigRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
         self.command = type(self).COMMAND
@@ -85,15 +86,16 @@ class GetAiConfigRequest(CommandRequestWithChannel, ai.GetAiConfigRequest):
 
 
 class GetAiConfigResponse(
-    CommandResponseWithChannel,
+    ResponseWithChannel,
     ai.GetAiConfigResponse,
-    test="is_response",
 ):
     """Get AI Configuration Response"""
 
     @classmethod
-    def is_response(cls, value: any, /):  # pylint: disable=signature-differs
-        return super().is_response(value, GetAiConfigRequest.COMMAND)
+    def from_response(cls, response: any, request: Request | None = None):
+        if super().is_response(response, command=GetAiStateRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None)
+        return None
 
     @property
     def channel_id(self) -> int:
@@ -103,14 +105,14 @@ class GetAiConfigResponse(
 
     @property
     def config(self):
-        return models.Config(self._get_value())
+        return model.Config(self._get_value())
 
-    def can_update(self, value: any) -> TypeGuard[models.Config]:
+    def can_update(self, value: any) -> TypeGuard[model.Config]:
         """Is value updatable"""
-        return isinstance(value, models.Config)
+        return isinstance(value, model.Config)
 
 
-class SetAiConfigRequest(CommandRequestWithChannel, ai.SetAiConfigRequest):
+class SetAiConfigRequest(RequestWithChannel, ai.SetAiConfigRequest):
     """Set AI Configuration"""
 
     COMMAND: Final = "SetAiCfg"
@@ -118,7 +120,7 @@ class SetAiConfigRequest(CommandRequestWithChannel, ai.SetAiConfigRequest):
     def __init__(
         self,
         channel_id: int = 0,
-        response_type: CommandResponseTypes = CommandResponseTypes.VALUE_ONLY,
+        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ) -> None:
         super().__init__()
         self.command = type(self).COMMAND
@@ -127,29 +129,4 @@ class SetAiConfigRequest(CommandRequestWithChannel, ai.SetAiConfigRequest):
 
     @property
     def config(self):
-        return models.MutableConfig(self._get_parameter)
-
-
-class CommandFactory(ai.CommandFactory):
-    """AI Rest Command Factory"""
-
-    def create_get_ai_state_request(self, channel_id: int):
-        return GetAiStateRequest(channel_id)
-
-    def is_get_ai_config_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetAiConfigResponse]:
-        return isinstance(response, GetAiConfigResponse)
-
-    def create_get_ai_config_request(self, channel_id: int):
-        return GetAiConfigRequest(channel_id)
-
-    def is_get_ai_state_response(
-        self, response: CommandResponse
-    ) -> TypeGuard[GetAiStateResponse]:
-        return isinstance(response, GetAiStateResponse)
-
-    def create_set_ai_config(self, channel_id: int, config: ai.Config):
-        request = SetAiConfigRequest(channel_id)
-        request.config.update(config)
-        return request
+        return model.MutableConfig(self._get_parameter)

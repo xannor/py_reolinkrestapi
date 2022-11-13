@@ -5,7 +5,7 @@ import logging
 from typing import AsyncIterable, TypedDict
 
 from async_reolink.api.connection.mixin import Connection
-from async_reolink.api.connection.typing import CommandRequest, CommandResponse
+from async_reolink.api.connection.model import Request, Response
 
 
 class MockConnectionValues(TypedDict):
@@ -57,10 +57,10 @@ class MockConnection_SingleExecute(MockConnection, ABC):
     """Mocked Single execute response"""
 
     @abstractmethod
-    async def _mocked_execute(self, request: CommandRequest) -> CommandResponse | bytes:
+    async def _mocked_execute(self, request: Request) -> Response | bytes:
         ...
 
-    def _execute(self, *args: CommandRequest) -> AsyncIterable[CommandResponse | bytes]:
+    def _execute(self, *args: Request) -> AsyncIterable[Response | bytes]:
         if self._logger is not None:
             self._logger.info("_execute fired")
 
