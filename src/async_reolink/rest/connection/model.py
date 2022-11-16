@@ -160,10 +160,10 @@ class ResponseWithCode(Response, typing.ResponseCode):
     """REST Command Response with code"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None):
         if (
-            super().is_response(response, command=request.command if request else None)
-            and super().is_value(response)
+            cls.is_response(response, command=request.command if request else None)
+            and cls.is_value(response)
             and _RSP_CODE_KEY in response[_VALUE_KEY]
         ):
             return cls(response, request.id if request else None)
@@ -207,11 +207,7 @@ class ErrorResponse(Response, model.ErrorResponse):
 
     @classmethod
     def from_response(cls, response: any, request: Request | None = None):
-        if (
-            super().is_response(response)
-            and _ERROR_KEY in response
-            and isinstance(response[_ERROR_KEY], dict)
-        ):
+        if cls.is_response(response) and cls.is_error(response):
             return cls(response, request.id if request else None)
         return None
 

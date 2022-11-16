@@ -126,7 +126,7 @@ class Connection(BaseConnection, WithConnection):
         url = f"{scheme}://{hostname}{_port}"
         _id = hash(url)
         if _id == self.__connection_id:
-            return
+            return True
         if self.__connection_id != 0:
             await self.disconnect()
 
@@ -135,11 +135,16 @@ class Connection(BaseConnection, WithConnection):
         self.__hostname = hostname
         self.__session = self._create_session(timeout)
 
+        async with self.__session.get("/") as response:
+            await response.text()
+
         for callback in self._connect_callbacks:
             if inspect.iscoroutinefunction(callback):
                 await callback()
             else:
                 callback()
+
+        return True
 
     async def disconnect(self):
         """disconnect from device"""
