@@ -3,8 +3,10 @@
 from abc import ABC
 from enum import IntEnum
 from typing import (
+    Callable,
     Final,
     TypeGuard,
+    TypeVar,
 )
 
 from async_reolink.api.connection import model, typing
@@ -89,6 +91,8 @@ _VALUE_KEY: Final = "value"
 _CODE_KEY: Final = "code"
 _ERROR_KEY: Final = "error"
 
+T = TypeVar("T")
+
 
 class Response(model.Response, ABC):
     """Rest Response"""
@@ -145,6 +149,19 @@ class Response(model.Response, ABC):
 
     def _get_error(self) -> dict:
         return self._response.get(_ERROR_KEY, None)
+
+    def _get_sub_key(
+        self, key: str, factory: Callable[[], dict], __type: Callable[[any], T] = None
+    ):
+        def get() -> T:
+            return _d.get(key, None) if (_d := factory()) else None
+
+        return get
+
+    def _get_sub_value(
+        self, key: str, factory: Callable[[], dict], __type: Callable[[any], T] = None
+    ):
+        return self._get_sub_key(key, factory, __type)()
 
 
 class UnhandledResponse(Response):

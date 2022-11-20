@@ -2,8 +2,10 @@
 
 from typing import Callable, Final
 from async_reolink.api.led import typing
-from async_reolink.api.typing import SimpleTimeValue
+from async_reolink.api.typing import PercentValue, SimpleTime as SimpleTimeType
+from async_reolink.api.model import SimpleTime
 
+from .. import model
 from ..typing import FactoryValue
 
 from ..ai.model import AITypesMap, MutableAITypesMap
@@ -16,65 +18,31 @@ class LightingSchedule(typing.LightingSchedule):
 
     __slots__ = ("_factory",)
 
+    _START_PFX: Final = "Start"
+    _END_PFX: Final = "End"
+
     def __init__(self, factory: Callable[[], dict]) -> None:
         super().__init__()
         self._factory = factory
 
-    class StartTime(SimpleTimeValue):
-        """Start Time"""
-
-        _HOUR_KEY: Final = "StartHour"
-        _MIN_KEY: Final = "StartMin"
-
-        __slots__ = ("_factory",)
-
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
-
-        @property
-        def hour(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get(type(self)._HOUR_KEY, 0)
-
-        @property
-        def minute(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get(type(self)._MIN_KEY, 0)
-
     @property
     def start(self):
-        return type(self).StartTime(self._factory)
-
-    class EndTime(SimpleTimeValue):
-        """End Time"""
-
-        __slots__ = ("_factory",)
-
-        _HOUR_KEY: Final = "EndHour"
-        _MIN_KEY: Final = "EndMin"
-
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
-
-        @property
-        def hour(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get(type(self)._HOUR_KEY, 0)
-
-        @property
-        def minute(self):
-            if (value := self._factory()) is None:
-                return 0
-            return value.get(type(self)._MIN_KEY, 0)
+        return model.SimpleTime(self._factory, self._START_PFX)
 
     @property
     def end(self):
-        return type(self).EndTime(self._factory)
+        return model.SimpleTime(self._factory, self._END_PFX)
+
+    def _copy(self):
+        _s = self.start._copy()
+        _e = self.end._copy()
+        if not _s and not _e:
+            return None
+        if _s and _e:
+            return _s.update(_e)
+        if _s:
+            return _s
+        return _e
 
 
 class MutableLightingSchedule(LightingSchedule):
@@ -84,51 +52,35 @@ class MutableLightingSchedule(LightingSchedule):
         super().__init__(factory)
         self._factory = factory
 
-    class StartTime(LightingSchedule.StartTime):
-        """Start Time"""
+    @property
+    def start(self):
+        return model.MutableSimpleTime(self._factory, self._START_PFX)
 
-        def __init__(self, factory: FactoryValue[dict]) -> None:
-            super().__init__(factory)
-            self._factory = factory
-
-        @LightingSchedule.StartTime.hour.setter
-        def hour(self, value):
-            if (value := self._factory(True)) is not None:
-                value[type(self)._HOUR_KEY] = value
-
-        @LightingSchedule.StartTime.minute.setter
-        def minute(self, value):
-            if (value := self._factory(True)) is not None:
-                value[type(self)._MIN_KEY] = value
-
-    def _update_time(self, _time: SimpleTimeValue, value: SimpleTimeValue):
-        _time.hour = value.hour
-        _time.minute = value.minute
-
-    @LightingSchedule.start.setter
+    @start.setter
     def start(self, value):
-        self._update_time(self.start, value)
+        self.start.update(value)
 
-    class EndTime(LightingSchedule.EndTime):
-        """End Time"""
+    @property
+    def end(self):
+        return model.MutableSimpleTime(self._factory, self._END_PFX)
 
-        def __init__(self, factory: FactoryValue[dict]) -> None:
-            super().__init__(factory)
-            self._factory = factory
+    @end.setter
+    def end(self, value):
+        self.end.update(value)
 
-        @LightingSchedule.EndTime.hour.setter
-        def hour(self, value):
-            if (value := self._factory(True)) is not None:
-                value[type(self)._HOUR_KEY] = value
-
-        @LightingSchedule.EndTime.minute.setter
-        def minute(self, value):
-            if (value := self._factory(True)) is not None:
-                value[type(self)._MIN_KEY] = value
-
-    @LightingSchedule.end.setter
-    def end(self, value: SimpleTimeValue):
-        self._update_time(self.end, value)
+    def update(self, value: typing.LightingSchedule):
+        if isinstance(value, LightingSchedule):
+            if (_d := value._copy()) and (_u := self._factory(True)):
+                _u.update(_d)
+            return
+        try:
+            self.start = value.start
+        except AttributeError:
+            pass
+        try:
+            self.end = value.end
+        except AttributeError:
+            pass
 
 
 class WhiteLedInfo(typing.WhiteLedInfo):
@@ -148,33 +100,33 @@ class WhiteLedInfo(typing.WhiteLedInfo):
         self._factory = factory
 
     @property
-    def brightness(self):
+    def brightness(self) -> PercentValue:
         if (value := self._factory()) is None:
             return 100
-        return value.get(type(self)._BRIGHT_KEY, 100)
+        return value.get(self._BRIGHT_KEY, 100)
 
     @property
-    def auto_mode(self):
+    def auto_mode(self) -> bool:
         if (value := self._factory()) is None:
             return 0
-        return value.get(type(self)._AUTO_KEY, 0)
+        return value.get(self._AUTO_KEY, 0)
 
     @property
-    def brightness_state(self):
+    def brightness_state(self) -> int:
         if (value := self._factory()) is None:
             return 0
-        return value.get(type(self)._MODE_KEY, 0)
+        return value.get(self._MODE_KEY, 0)
 
     @property
-    def state(self):
+    def state(self) -> bool:
         if (value := self._factory()) is None:
             return 0
-        return value.get(type(self)._STATE_KEY, 0)
+        return value.get(self._STATE_KEY, 0)
 
     def _get_sched(self) -> dict:
         if (value := self._factory()) is None:
             return None
-        return value.get(type(self)._SCHED_KEY, None)
+        return value.get(self._SCHED_KEY, None)
 
     @property
     def lighting_schedule(self):
@@ -183,11 +135,21 @@ class WhiteLedInfo(typing.WhiteLedInfo):
     def _get_ai(self) -> dict:
         if (value := self._factory()) is None:
             return None
-        return value.get(type(self)._AI_KEY, None)
+        return value.get(self._AI_KEY, None)
 
     @property
     def ai_detection_type(self):
         return AITypesMap(self._get_ai)
+
+    def _copy(self):
+        if not (_d := self._factory()):
+            return None
+        _d = _d.copy()
+        if _d2 := self.lighting_schedule._copy():
+            _d[self._SCHED_KEY] = _d2
+        if _d2 := self.ai_detection_type._copy():
+            _d[self._AI_KEY] = _d2
+        return _d
 
 
 class MutableWhiteLedInfo(WhiteLedInfo):
@@ -199,53 +161,80 @@ class MutableWhiteLedInfo(WhiteLedInfo):
 
     @WhiteLedInfo.brightness.setter
     def brightness(self, value):
-        if (value := self._factory(True)) is not None:
-            value[type(self)._BRIGHT_KEY] = value
+        if (_d := self._factory(True)) is not None:
+            _d[self._BRIGHT_KEY] = int(value)
 
     @WhiteLedInfo.auto_mode.setter
     def auto_mode(self, value):
-        if (value := self._factory(True)) is not None:
-            value[type(self)._AUTO_KEY] = value
+        if (_d := self._factory(True)) is not None:
+            _d[self._AUTO_KEY] = int(value)
 
     @WhiteLedInfo.brightness_state.setter
     def brightness_state(self, value):
-        if (value := self._factory(True)) is not None:
-            value[type(self)._MODE_KEY] = value
+        if (_d := self._factory(True)) is not None:
+            _d[self._MODE_KEY] = int(value)
 
     @WhiteLedInfo.state.setter
     def state(self, value):
-        if (value := self._factory(True)) is not None:
-            value[type(self)._STATE_KEY] = value
+        if (_d := self._factory(True)) is not None:
+            _d[self._STATE_KEY] = int(value)
 
     def _get_sched(self, create=False) -> dict:
         if not create:
             return super()._get_sched()
         if (value := self._factory(True)) is None:
             return None
-        return value.setdefault(type(self)._SCHED_KEY, {})
+        return value.setdefault(self._SCHED_KEY, {})
 
-    @WhiteLedInfo.lighting_schedule.getter
+    @property
     def lighting_schedule(self):
         return MutableLightingSchedule(self._get_sched)
 
     @lighting_schedule.setter
     def lighting_schedule(self, value: typing.LightingSchedule):
-        _sched = self.lighting_schedule
-        _sched.start = value.start
-        _sched.end = value.end
+        self.lighting_schedule.update(value)
 
     def _get_ai(self, create=False) -> dict:
         if not create:
             return super()._get_ai()
         if (value := self._factory(True)) is None:
             return None
-        return value.setdefault(type(self)._AI_KEY, {})
+        return value.setdefault(self._AI_KEY, {})
 
-    @WhiteLedInfo.ai_detection_type.getter
+    @property
     def ai_detection_type(self):
         return MutableAITypesMap(self._get_ai)
 
     @ai_detection_type.setter
     def ai_detection_type(self, value):
-        _type: MutableAITypesMap = self.ai_detection_type
-        _type.update(value)
+        self.ai_detection_type.update(value)
+
+    def update(self, value: typing.WhiteLedInfo):
+        if isinstance(value, WhiteLedInfo):
+            if (_d := value._copy()) and (_u := self._factory(True)):
+                _u.update(_d)
+            return
+        try:
+            self.auto_mode = value.auto_mode
+        except AttributeError:
+            pass
+        try:
+            self.ai_detection_type.update(value.ai_detection_type)
+        except AttributeError:
+            pass
+        try:
+            self.brightness = value.brightness
+        except AttributeError:
+            pass
+        try:
+            self.brightness_state = value.brightness_state
+        except AttributeError:
+            pass
+        try:
+            self.lighting_schedule.update(value.lighting_schedule)
+        except AttributeError:
+            pass
+        try:
+            self.state = value.state
+        except AttributeError:
+            pass

@@ -5,7 +5,7 @@ from async_reolink.api.network import command as network
 
 from async_reolink.api.typing import StreamTypes
 from ..typing import STREAMTYPES_STR_MAP
-from ..models import MinMaxRange
+from ..model import MinMaxRange
 
 from . import model
 

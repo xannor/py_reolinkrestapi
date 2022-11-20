@@ -1,140 +1,14 @@
 """REST Record Models"""
 
-from datetime import date, datetime, time
+from datetime import date
 from typing import Callable, Final, Iterable, overload
-from async_reolink.api.typing import DateTimeValue as BaseDateTimeValue, StreamTypes
+from async_reolink.api.typing import StreamTypes
 from async_reolink.api.record import typing
 
 from ..typing import STR_STREAMTYPES_MAP, STREAMTYPES_STR_MAP, FactoryValue
+from .. import model
 
 # pylint: disable=missing-function-docstring
-
-
-class DateTimeValue(BaseDateTimeValue):
-    """REST Recording DateTime Value"""
-
-    __slots__ = ("_factory",)
-
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
-
-    @property
-    def year(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("year", 0)
-
-    @property
-    def month(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("mon", 0)
-
-    @property
-    def day(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("day", 0)
-
-    def to_date(self):
-        return date(self.year, self.month, self.day)
-
-    @property
-    def hour(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("hour", 0)
-
-    @property
-    def minute(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("min", 0)
-
-    @property
-    def second(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("sec", 0)
-
-    def to_time(self):
-        return time(self.hour, self.minute, self.second)
-
-    def to_datetime(self):
-        return datetime(self.to_date(), self.to_time())
-
-
-class MutableDateTimeValue(DateTimeValue):
-    """REST Recording Mutable DateTime Value"""
-
-    __slots__ = ()
-
-    @overload
-    def __init__(self) -> None:
-        ...
-
-    @overload
-    def __init__(self, value: datetime) -> None:
-        ...
-
-    @overload
-    def __init__(self, value: typing.DateTimeValue) -> None:
-        ...
-
-    @overload
-    def __init__(self, factory: FactoryValue[dict]) -> None:
-        ...
-
-    def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        source: typing.DateTimeValue = None
-        if not callable(factory):
-            value = factory
-            if not isinstance(value, dict):
-                source = value
-                value = {}
-
-            def _factory(*_):
-                return value
-
-            factory = _factory
-        super().__init__(factory)
-        self._factory = factory
-        if source is not None:
-            self.year = source.year
-            self.month = source.month
-            self.day = source.day
-            self.hour = source.hour
-            self.minute = source.minute
-            self.second = source.second
-
-    @property
-    def _value(self):
-        return self._factory(True)
-
-    @DateTimeValue.year.setter
-    def year(self, value):
-        self._value["year"] = value
-
-    @DateTimeValue.month.setter
-    def month(self, value):
-        self._value["mon"] = value
-
-    @DateTimeValue.day.setter
-    def day(self, value):
-        self._value["day"] = value
-
-    @DateTimeValue.hour.setter
-    def hour(self, value):
-        self._value["hour"] = value
-
-    @DateTimeValue.minute.setter
-    def minute(self, value):
-        self._value["min"] = value
-
-    @DateTimeValue.second.setter
-    def second(self, value):
-        self._value["sec"] = value
-
 
 _DEFAULT_STREAMTYPE: Final = StreamTypes.MAIN
 _DEFAULT_STREAMTYPE_STR = STREAMTYPES_STR_MAP[_DEFAULT_STREAMTYPE]
@@ -149,10 +23,10 @@ class Search(typing.Search):
         self._factory = factory
 
     @property
-    def status_only(self) -> bool:
+    def status_only(self):
         if (value := self._factory()) is None:
-            return 0
-        return value.get("onlyStatus", 0)
+            return False
+        return bool(value.get("onlyStatus", 0))
 
     @property
     def stream_type(self):
@@ -167,7 +41,7 @@ class Search(typing.Search):
 
     @property
     def start(self):
-        return DateTimeValue(self._get_start)
+        return model.DateTime(self._get_start)
 
     def _get_end(self) -> dict:
         if (value := self._factory()) is None:
@@ -176,7 +50,18 @@ class Search(typing.Search):
 
     @property
     def end(self):
-        return DateTimeValue(self._get_end)
+        return model.DateTime(self._get_end)
+
+    def _copy(self):
+        if not (_d := self._factory()):
+            return None
+        _d = _d.copy()
+        if _t := self.start._copy():
+            _t["StartTime"] = _t
+        if _t := self.end._copy():
+            _t["EndTime"] = _t
+
+        return _d
 
 
 class MutableSearch(Search):
@@ -184,37 +69,18 @@ class MutableSearch(Search):
 
     __slots__ = ()
 
-    @overload
-    def __init__(self) -> None:
-        ...
-
-    @overload
-    def __init__(self, value: typing.Search) -> None:
-        ...
-
-    @overload
-    def __init__(self, factory: FactoryValue[dict]) -> None:
-        ...
-
     def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        source: typing.Search = None
-        if not callable(factory):
-            value = factory
-            if not isinstance(value, dict):
-                source = value
-                value = {}
+        if factory is None:
+            _d: dict = None
 
-            def _factory(*_):
-                return value
+            def _factory(create=False):
+                if _d is None and create:
+                    _d = {}
+                return _d
 
             factory = _factory
         super().__init__(factory)
         self._factory = factory
-        if source is not None:
-            self.status_only = source.status_only
-            self.stream_type = source.stream_type
-            self.start = source.start
-            self.end = source.end
 
     @property
     def _value(self):
@@ -238,13 +104,11 @@ class MutableSearch(Search):
 
     @property
     def start(self):
-        return MutableDateTimeValue(self._get_start)
+        return model.MutableDateTime(self._get_start)
 
     @start.setter
-    def start(self, value: typing.DateTimeValue):
-        if not isinstance(value, MutableDateTimeValue):
-            value = MutableDateTimeValue(value)
-        self._value["StartTime"] = value._factory(True)
+    def start(self, value: typing.DateTime):
+        self.start.update(value)
 
     def _get_end(self, create=False) -> dict:
         _key: Final = "EndTime"
@@ -256,13 +120,33 @@ class MutableSearch(Search):
 
     @property
     def end(self):
-        return MutableDateTimeValue(self._get_end)
+        return model.MutableDateTime(self._get_end)
 
     @end.setter
-    def end(self, value: typing.DateTimeValue):
-        if not isinstance(value, MutableDateTimeValue):
-            value = MutableDateTimeValue(value)
-        self._value["EndTime"] = value._factory(True)
+    def end(self, value: typing.DateTime):
+        self.end.update(value)
+
+    def update(self, value: typing.Search):
+        if isinstance(value, Search):
+            if (_d := value._copy()) and (_u := self._factory(True)):
+                _u.update(_d)
+            return
+        try:
+            self.status_only = value.status_only
+        except AttributeError:
+            pass
+        try:
+            self.stream_type = value.stream_type
+        except AttributeError:
+            pass
+        try:
+            self.start.update(value.start)
+        except AttributeError:
+            pass
+        try:
+            self.end.update(value.end)
+        except AttributeError:
+            pass
 
 
 class File(typing.File):
@@ -316,7 +200,7 @@ class File(typing.File):
 
     @property
     def start(self):
-        return DateTimeValue(self._get_start)
+        return model.DateTime(self._get_start)
 
     def _get_end(self) -> dict:
         if (value := self._factory()) is None:
@@ -325,7 +209,7 @@ class File(typing.File):
 
     @property
     def end(self):
-        return DateTimeValue(self._get_end)
+        return model.DateTime(self._get_end)
 
 
 class _SearchStatusTable(Iterable[int]):

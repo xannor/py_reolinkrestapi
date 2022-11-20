@@ -7,25 +7,23 @@ from types import MappingProxyType
 from typing import Callable, Final, Mapping, TypeVar, overload
 from async_reolink.api.system import capabilities
 
-_T = TypeVar("_T")
-
 # pylint: disable=too-few-public-methods
 # pylint: disable=missing-function-docstring
 
 _defaults: dict[type, any] = {None: 0}
 
-_F = TypeVar("_F", bound=Flag)
+T = TypeVar("T")
+
+F = TypeVar("F", bound=Flag)
 
 
-def _flag_map(__flag_map: dict[int, _F]):
-    def bor(a: _T, b: _T) -> _T:
+def _flag_map(__flag_map: dict[int, F]):
+    def bor(a: F, b: F) -> F:
         return a | b
 
     lookup = {_v: _k for _k, _v in __flag_map.items()}
     values = list(__flag_map.values())
-    for t in chain.from_iterable(
-        combinations(values, i) for i in range(len(values) + 1)
-    ):
+    for t in chain.from_iterable(combinations(values, i) for i in range(len(values) + 1)):
         if len(t) == 0:
             continue
         vt = map(lambda f: lookup[f], t)
@@ -36,7 +34,7 @@ def _flag_map(__flag_map: dict[int, _F]):
     return __flag_map
 
 
-def _map_factory(__map: dict[int, _T], __default: _T = None) -> Callable[[int], _T]:
+def _map_factory(__map: dict[int, T], __default: T = None) -> Callable[[int], T]:
     if __default is None and 0 in __map:
         __default = __map[0]
 
@@ -59,7 +57,7 @@ _INT_PERMISSION_MAP: Final = MappingProxyType(
 _NO_PERMISSIONS: capabilities.Permissions = None
 
 
-class Capability(capabilities.Capability[_T]):
+class Capability(capabilities.Capability[T]):
     """Capability"""
 
     __slots__ = ("_factory", "_init")
@@ -70,13 +68,11 @@ class Capability(capabilities.Capability[_T]):
 
     @overload
     def __init__(
-        self: "Capability[_T]", factory: Callable[[], dict], __type: Callable[[int], _T]
+        self: "Capability[T]", factory: Callable[[], dict], __type: Callable[[int], T]
     ) -> None:
         ...
 
-    def __init__(
-        self, factory: Callable[[], dict], __type: Callable[[int], _T] = None
-    ) -> None:
+    def __init__(self, factory: Callable[[], dict], __type: Callable[[int], T] = None) -> None:
         super().__init__()
         self._factory = factory
         self._init = __type
@@ -89,7 +85,7 @@ class Capability(capabilities.Capability[_T]):
         return value.get("ver", 0)
 
     @property
-    def value(self) -> _T:
+    def value(self) -> T:
         value = self._get_value()
         if value == 0:
             return _defaults[self._init]
@@ -104,34 +100,22 @@ class Capability(capabilities.Capability[_T]):
         return _INT_PERMISSION_MAP.get(value.get("permit", 0), _NO_PERMISSIONS)
 
     def __bool__(self):
-        if (
-            self.permissions is None
-            or capabilities.Permissions.READ not in self.permissions
-        ):
+        if self.permissions is None or capabilities.Permissions.READ not in self.permissions:
             return False
         return bool(self._get_value())
 
     def __index__(self):
-        if (
-            self.permissions is None
-            or capabilities.Permissions.READ not in self.permissions
-        ):
+        if self.permissions is None or capabilities.Permissions.READ not in self.permissions:
             return 0
         return self._get_value()
 
     def __int__(self):
-        if (
-            self.permissions is None
-            or capabilities.Permissions.READ not in self.permissions
-        ):
+        if self.permissions is None or capabilities.Permissions.READ not in self.permissions:
             return 0
         return self._get_value()
 
     def __str__(self):
-        if (
-            self.permissions is None
-            or capabilities.Permissions.READ not in self.permissions
-        ):
+        if self.permissions is None or capabilities.Permissions.READ not in self.permissions:
             return ""
         return str(self.value)
 
@@ -203,9 +187,7 @@ _INT_LIVE: Final = _map_factory(
     {1: capabilities.Live.MAIN_EXTERN_SUB, 2: capabilities.Live.MAIN_SUB}
 )
 
-_INT_OSD: Final = _map_factory(
-    {1: capabilities.Osd.SUPPORTED, 2: capabilities.Osd.DISTINCT}
-)
+_INT_OSD: Final = _map_factory({1: capabilities.Osd.SUPPORTED, 2: capabilities.Osd.DISTINCT})
 
 _INT_PTZCONTROL: Final = _map_factory(
     {1: capabilities.PTZControl.ZOOM, 2: capabilities.PTZControl.ZOOM_FOCUS}
@@ -240,9 +222,7 @@ _INT_TIME: Final = _map_factory(
     }
 )
 
-_INT_UPGRADE: Final = _map_factory(
-    {1: capabilities.Upgrade.MANUAL, 2: capabilities.Upgrade.ONLINE}
-)
+_INT_UPGRADE: Final = _map_factory({1: capabilities.Upgrade.MANUAL, 2: capabilities.Upgrade.ONLINE})
 
 _INT_VIDEOCLIP: Final = _map_factory(
     {1: capabilities.VideoClip.FIXED, 2: capabilities.VideoClip.MOD}
@@ -1365,9 +1345,7 @@ class Capabilities(capabilities.Capabilities):
 
                 @property
                 def task_enable(self):
-                    return Capability(
-                        self._keyed_factory("supportAudioAlarmTaskEnable")
-                    )
+                    return Capability(self._keyed_factory("supportAudioAlarmTaskEnable"))
 
             @property
             def alarm(self):

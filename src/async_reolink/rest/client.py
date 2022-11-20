@@ -109,15 +109,7 @@ class Client(Connection, Security, Network, Record, BaseClient):
 
     def _create_set_white_led(self, info: led_types.WhiteLedInfo, channel_id: int):
         request = led.SetWhiteLedRequest(channel_id=channel_id)
-        request.info.state = info.state
-        if info.brightness is not None:
-            request.info.brightness = info.brightness
-        if info.brightness_state is not None:
-            request.info.brightness_state = info.brightness_state
-        if info.lighting_schedule is not None:
-            request.info.lighting_schedule = info.lighting_schedule
-        if info.ai_detection_type is not None:
-            request.info.ai_detection_type = info.ai_detection_type
+        request.info.update(info)
         return request
 
     # endregion

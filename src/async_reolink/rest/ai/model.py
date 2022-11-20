@@ -39,6 +39,11 @@ class AlarmState(typing.AlarmState):
     def __repr__(self):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
+    def _copy(self):
+        if not (_d := self._factory()):
+            return None
+        return _d.copy()
+
 
 class State(Mapping[typing.AITypes, AlarmState]):
     """AI State"""
@@ -78,6 +83,9 @@ class State(Mapping[typing.AITypes, AlarmState]):
         # pylint: disable=protected-access
         self._value = value._value
 
+    def _copy(self):
+        return self._value.copy()
+
 
 class AITypesMap(Mapping[typing.AITypes, bool]):
     """AI Types Map"""
@@ -107,6 +115,11 @@ class AITypesMap(Mapping[typing.AITypes, bool]):
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
+    def _copy(self):
+        if not (_d := self._factory()):
+            return None
+        return _d.copy()
 
 
 class MutableAITypesMap(AITypesMap, MutableMapping[typing.AITypes, bool]):
@@ -153,18 +166,10 @@ class Config(typing.Config):
         self._factory = factory
 
     def _get_detect_type(self) -> dict:
-        return (
-            value.get(_DETECT_TYPE_KEY, None)
-            if (value := self._factory()) is not None
-            else None
-        )
+        return value.get(_DETECT_TYPE_KEY, None) if (value := self._factory()) is not None else None
 
     def _get_type(self) -> dict:
-        return (
-            value.get(_TYPE_KEY, None)
-            if (value := self._factory()) is not None
-            else None
-        )
+        return value.get(_TYPE_KEY, None) if (value := self._factory()) is not None else None
 
     @property
     def detect_type(self):
@@ -181,16 +186,10 @@ class Config(typing.Config):
 
     @property
     def ai_track(self) -> bool:
-        return (
-            value.get(_AI_TRACK_KEY, 0) if (value := self._factory()) is not None else 0
-        )
+        return value.get(_AI_TRACK_KEY, 0) if (value := self._factory()) is not None else 0
 
     def _get_track_type(self) -> dict:
-        return (
-            value.get(_TRACK_TYPE_KEY, None)
-            if (value := self._factory()) is not None
-            else None
-        )
+        return value.get(_TRACK_TYPE_KEY, None) if (value := self._factory()) is not None else None
 
     @property
     def track_type(self):
@@ -210,6 +209,19 @@ class Config(typing.Config):
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+
+    def _copy(self):
+        if not (_d := self._factory()):
+            return None
+        _d = _d.copy()
+        if _d2 := self.detect_type._copy():
+            if _DETECT_TYPE_KEY in _d:
+                _d[_DETECT_TYPE_KEY] = _d2
+            else:
+                _d[_TYPE_KEY] = _d2
+        if _d2 := self.track_type._copy():
+            _d[_TRACK_TYPE_KEY] = _d2
+        return _d
 
 
 class MutableConfig(Config):

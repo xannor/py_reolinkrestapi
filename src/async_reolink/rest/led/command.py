@@ -1,9 +1,11 @@
 """REST LED Commands"""
 
-from typing import Final
+from typing import Final, Callable
 
 from async_reolink.api.led import command as led
 from async_reolink.api.led import typing
+
+from ..model import MinMaxRange
 
 from .typing import LIGHTSTATES_STR_MAP, STR_LIGHTSTATES_MAP
 from .model import MutableWhiteLedInfo, WhiteLedInfo
@@ -55,11 +57,19 @@ class GetIrLightsResponse(RestCommandResponse, led.GetIrLightsResponse):
     __slots__ = ()
 
     def _get_lights(self) -> dict:
-        return value.get(_IR_LIGHTS_KEY, None) if (value := self._get_value()) is not None else None
+        return (
+            value.get(_IR_LIGHTS_KEY, None)
+            if (value := self._get_value()) is not None
+            else None
+        )
 
     @property
     def channel_id(self) -> int:
-        return value.get(_CHANNEL_KEY, 0) if (value := self._get_lights()) is not None else 0
+        return (
+            value.get(_CHANNEL_KEY, 0)
+            if (value := self._get_lights()) is not None
+            else 0
+        )
 
     @property
     def state(self) -> typing.LightStates:
@@ -122,7 +132,7 @@ class GetPowerLedRequest(Request, led.GetPowerLedRequest):
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
-        super().__init__(self.COMMAND, response_type)
+        super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
@@ -146,7 +156,11 @@ class GetPowerLedResponse(RestCommandResponse, led.GetPowerLedResponse):
     channel_id = GetIrLightsResponse.channel_id
 
     def _get_lights(self) -> dict:
-        return value.get(_POWER_LED_KEY, None) if (value := self._get_value()) is not None else None
+        return (
+            value.get(_POWER_LED_KEY, None)
+            if (value := self._get_value()) is not None
+            else None
+        )
 
 
 class SetPowerLedRequest(Request, led.SetPowerLedRequest):
@@ -162,7 +176,7 @@ class SetPowerLedRequest(Request, led.SetPowerLedRequest):
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
-        super().__init__(self.COMMAND, response_type)
+        super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
@@ -193,10 +207,29 @@ class GetWhiteLedRequest(RequestWithChannel, led.GetWhiteLedRequest):
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
-        super().__init__(self.COMMAND, response_type)
+        super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
+
+
+class _WhiteLedRange:
+    __slots__ = ("_factory",)
+
+    def __init__(self, factory: Callable[[], dict]) -> None:
+        self._factory = factory
+
+    def _keyed_factory(self, key: str):
+        def factory() -> dict:
+            return (
+                value.get(key, None) if (value := self._factory()) is not None else None
+            )
+
+        return factory
+
+    @property
+    def brightness(self):
+        return MinMaxRange("", self._keyed_factory(WhiteLedInfo._BRIGHT_KEY))
 
 
 _WHITE_LED_KEY = "WhiteLed"
@@ -213,14 +246,19 @@ class GetWhiteLedResponse(RestCommandResponse, led.GetWhiteLedResponse):
 
     __slots__ = ()
 
-    def _get_lights(self) -> dict:
-        return value.get(_WHITE_LED_KEY, None) if (value := self._get_value()) is not None else None
-
     channel_id = GetIrLightsResponse.channel_id
 
     @property
     def info(self) -> WhiteLedInfo:
-        return WhiteLedInfo(self._get_lights)
+        return WhiteLedInfo(self._get_sub_key(_WHITE_LED_KEY, self._get_value))
+
+    @property
+    def initial_info(self):
+        return WhiteLedInfo(self._get_sub_key(_WHITE_LED_KEY, self._get_initial))
+
+    @property
+    def info_range(self):
+        return _WhiteLedRange(self._get_sub_key(_WHITE_LED_KEY, self._get_range))
 
 
 class SetWhiteLedRequest(Request, led.SetWhiteLedRequest):
@@ -235,8 +273,8 @@ class SetWhiteLedRequest(Request, led.SetWhiteLedRequest):
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
-        super().__init__(self.COMMAND, response_type)
-        self.command = type(self).COMMAND
+        super().__init__()
+        self.command = self.COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
 
@@ -259,3 +297,7 @@ class SetWhiteLedRequest(Request, led.SetWhiteLedRequest):
     @property
     def info(self):
         return MutableWhiteLedInfo(self._get_lights)
+
+    @info.setter
+    def info(self, value: typing.WhiteLedInfo):
+        self.info.update(value)

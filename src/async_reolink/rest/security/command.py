@@ -13,7 +13,7 @@ from ..connection.model import (
 from .model import LoginToken, UserInfo
 from .typing import _STR_LEVELTYPE_MAP
 
-from ..models import StringRange
+from ..model import StringRange
 
 # pylint:disable=missing-function-docstring
 

@@ -1,15 +1,15 @@
 """System models"""
 
-from typing import Callable, Final, TypeVar
+from typing import Callable, Final
 from async_reolink.api.system import command as system
 from async_reolink.api.system import typing
 from async_reolink.api.typing import WeekDays
+from async_reolink.api import model
 from .typing import _INT_WEEKDAY_MAP, _INT_STORAGETYPE_MAP
+
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=too-few-public-methods
-
-_T = TypeVar("_T")
 
 
 class DeviceInfo(typing.DeviceInfo):
@@ -230,9 +230,7 @@ class DaylightSavingsTimeInfo(system.DaylightSavingsTimeInfo):
         def weekday(self):
             if (value := self._factory()) is None:
                 return WeekDays.SUNDAY
-            return _INT_WEEKDAY_MAP.get(
-                value.get(self._prefix + "Weekday", 0), WeekDays.SUNDAY
-            )
+            return _INT_WEEKDAY_MAP.get(value.get(self._prefix + "Weekday", 0), WeekDays.SUNDAY)
 
     @property
     def start(self):
@@ -243,7 +241,7 @@ class DaylightSavingsTimeInfo(system.DaylightSavingsTimeInfo):
         return type(self).TimeInfo(self._factory, "end")
 
 
-class TimeInfo(system.TimeInfo):
+class TimeInfo(model.DateTime, system.TimeInfo):
     """Device Time"""
 
     __slots__ = ("_factory",)
@@ -353,6 +351,4 @@ class StorageInfo(typing.StorageInfo):
     def type(self):
         if (value := self._factory()) is None:
             return _DEFAULT_STORAGETYPE
-        return _INT_STORAGETYPE_MAP.get(
-            value.get("storageType", 0), _DEFAULT_STORAGETYPE
-        )
+        return _INT_STORAGETYPE_MAP.get(value.get("storageType", 0), _DEFAULT_STORAGETYPE)

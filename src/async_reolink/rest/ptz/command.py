@@ -13,7 +13,7 @@ from async_reolink.api.ptz import typing
 
 from .._utilities.dictlist import DictList
 
-from ..models import MinMaxRange, StringRange
+from ..model import MinMaxRange, StringRange
 
 from .typing import (
     OPERATION_STR_MAP,
