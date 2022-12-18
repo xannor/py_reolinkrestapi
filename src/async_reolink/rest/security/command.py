@@ -1,7 +1,7 @@
 """Secuirty REST Commands"""
 
-from typing import TYPE_CHECKING, Callable, Final, Sequence, cast
-from async_reolink.api.security import command as security, typing
+from typing import TYPE_CHECKING, Callable, Final, Protocol, Sequence, TypedDict, cast
+from async_reolink.api.security import command as security, typing as security_typing
 
 from ..connection.model import (
     Request,
@@ -9,9 +9,11 @@ from ..connection.model import (
     Response as RestResponse,
 )
 
+from ..security.typing import level_type_str
+
+from .._utilities import providers
 
 from .model import LoginToken, UserInfo
-from .typing import _STR_LEVELTYPE_MAP
 
 from ..model import StringRange
 
@@ -21,14 +23,52 @@ from ..model import StringRange
 class LoginRequest(Request, security.LoginRequest):
     """REST Login Request"""
 
+    class Parameter(Protocol):
+        """Parameter"""
+
+        class Login(Protocol):
+            """Login"""
+
+            class JSON(TypedDict):
+                """JSON"""
+
+                userName: str
+                password: str
+                Version: int
+
+            class Keys(Protocol):
+                """Keys"""
+
+                user_name: Final = "userName"
+                password: Final = "password"
+                version: Final = "Version"
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            User: "LoginRequest.Parameter.Login.JSON"
+
+        class Keys(Protocol):
+            """Keys"""
+
+            login: Final = "User"
+
     __slots__ = ()
 
+    _parameter: Parameter.JSON
+
     COMMAND: Final = "Login"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID
 
     def __init__(
         self,
         user_name: str,
         password: str,
+        version: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ) -> None:
         super().__init__()
@@ -36,53 +76,83 @@ class LoginRequest(Request, security.LoginRequest):
         self.response_type = response_type
         self.user_name = user_name
         self.password = password
+        self.version = version
 
-    def _get_login(self, create=False) -> dict:
-        _key: Final = "User"
-        if (parameter := self._get_parameter(create)) is None:
+    def _get_login(self, create=False):
+        if not (value := self._get_parameter(create)):
             return None
-        if _key in parameter or not create:
-            return parameter.get(_key, None)
-        return parameter.setdefault(_key, {})
+        if not (login := value.get(self.Parameter.Keys.login)) and create:
+            login: dict = value.setdefault(self.Parameter.Keys.login, {})
+        return login
+
+    _login: Parameter.Login.JSON = property(_get_login)
 
     @property
-    def _login(self):
-        return self._get_login(True)
-
-    @property
-    def user_name(self) -> str:
-        return value.get("userName", "") if (value := self._get_login()) is not None else ""
+    def user_name(self):
+        if value := self._login:
+            return value.get(self.Parameter.Login.Keys.user_name, "")
+        return ""
 
     @user_name.setter
     def user_name(self, value):
-        self._login["userName"] = value
+        self._get_login(True)[self.Parameter.Login.Keys.user_name] = str(value)
 
     @property
-    def password(self) -> str:
-        return value.get("password", "") if (value := self._get_login()) is not None else ""
+    def password(self):
+        if value := self._login:
+            return value.get(self.Parameter.Login.Keys.password, "")
+        return ""
 
     @password.setter
     def password(self, value):
-        self._login["password"] = value
+        self._get_login(True)[self.Parameter.Login.Keys.password] = str(value)
+
+    @property
+    def version(self):
+        if value := self._login:
+            return value.get(self.Parameter.Login.Keys.version, 0)
+        return 0
+
+    @version.setter
+    def version(self, value):
+        self._get_login(True)[self.Parameter.Login.Keys.version] = int(value)
 
 
 class LoginResponse(RestResponse, security.LoginResponse):
     """REST Login Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, LoginRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
+
+    class Value(Protocol):
+        """Value"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            Token: LoginToken.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            token: Final = "Token"
 
     __slots__ = ()
 
-    def _get_token(self) -> dict:
-        return value.get("Token", None) if (value := self._get_value()) is not None else None
+    _value: Value.JSON
+
+    @property
+    def _token(self):
+        if value := self._value:
+            return value.get(self.Value.Keys.token)
+        return None
 
     @property
     def token(self):
-        return LoginToken(self._get_token)
+        return LoginToken(lambda: self._token)
 
 
 class LogoutRequest(Request, security.LogoutRequest):
@@ -91,63 +161,16 @@ class LogoutRequest(Request, security.LogoutRequest):
     __slots__ = ()
 
     COMMAND: Final = "Logout"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
         self.command = type(self).COMMAND
         self.response_type = response_type
-
-
-class _UserInitial:
-
-    __slots__ = ("_factory",)
-
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
-
-    @property
-    def level(self):
-        if (value := self._factory()) is None:
-            return None
-        return _STR_LEVELTYPE_MAP.get(value.get("level", None), None)
-
-
-class _UserRange:
-    __slots__ = ("_factory",)
-
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
-
-    @property
-    def levels(self) -> list[typing.LevelTypes]:
-        if (value := self._factory()) is None:
-            return []
-        if (_list := value.get("level", None)) is None:
-            return []
-        if TYPE_CHECKING:
-            _list = cast(_list, list)
-        return list(
-            filter(
-                lambda _e: _e is not None,
-                map(lambda s: _STR_LEVELTYPE_MAP.get(s, None), _list),
-            )
-        )
-
-    def _get_keyed(self, key: str):
-        def _factory() -> dict:
-            if (value := self._factory()) is None:
-                return None
-            return value.get(key, None)
-
-        return _factory
-
-    @property
-    def user_name(self):
-        return StringRange(self._get_keyed("userName"))
-
-    @property
-    def password(self):
-        return StringRange(self._get_keyed("password"))
 
 
 class GetUserRequest(Request, security.GetUserRequest):
@@ -156,6 +179,11 @@ class GetUserRequest(Request, security.GetUserRequest):
     __slots__ = ()
 
     COMMAND: Final = "GetUser"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
@@ -163,54 +191,67 @@ class GetUserRequest(Request, security.GetUserRequest):
         self.response_type = response_type
 
 
-class _Users(Sequence[UserInfo]):
-    __slots__ = ("_value",)
-
-    def __init__(self, value: list) -> None:
-        super().__init__()
-        self._value = value
-
-    def _factory(self):
-        return self._value
-
-    def _get_item(self, __index: int):
-        def _factory() -> dict:
-            return self._value[__index]
-
-        return _factory
+class _Users(providers.ListProvider[dict[str, any]], Sequence[UserInfo]):
+    __slots__ = ()
 
     def __getitem__(self, __index: int):
-        return UserInfo(self._get_item(__index))
+        return UserInfo(lambda _: self._get_index_value(self._get_provided_value, __index))
 
     def __len__(self):
-        return len(self._value)
+        if value := self._provided_value:
+            return len(value)
+        return 0
+
+
+class _UserRange(providers.DictProvider[str, any]):
+
+    __slots__ = ()
+
+    @property
+    def levels(self):
+        if not (value := self._provided_value.get(UserInfo.Keys.level)):
+            return []
+
+        return list(
+            filter(
+                lambda i: i is not None,
+                map(
+                    security_typing.LevelTypes,
+                    value,
+                ),
+            )
+        )
+
+    @property
+    def user_name(self):
+        return StringRange(lambda _: self._provided_value.get(UserInfo.Keys.user_name))
+
+    @property
+    def password(self):
+        return StringRange(
+            lambda _: self._provided_value.get(LoginRequest.Parameter.Login.Keys.password)
+        )
 
 
 class GetUserResponse(RestResponse, security.GetUserResponse):
     """REST Get Users(s) Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetUserRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
 
     __slots__ = ()
 
-    def _get_user(self, factory: Callable[[], dict]) -> dict:
-        def _factory():
-            return value.get("User", None) if (value := factory()) is not None else None
-
-        return _factory
-
     @property
     def users(self):
-        return _Users(self._get_user(self._get_value))
+        return _Users(lambda _: self._provided_value.get(LoginRequest.Parameter.Keys.login))
 
     @property
     def initial(self):
-        return _UserInitial(self._get_user(self._get_initial))
+        return UserInfo(lambda _: self._initial.get(LoginRequest.Parameter.Keys.login))
 
     @property
     def range(self):
-        return _UserRange(self._get_user(self._get_range))
+        return _UserRange(lambda _: self._range.get(LoginRequest.Parameter.Keys.login))

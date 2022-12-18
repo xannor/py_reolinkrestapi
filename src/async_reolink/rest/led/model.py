@@ -1,60 +1,42 @@
 """LED Models"""
 
-from typing import Callable, Final
-from async_reolink.api.led import typing
+from typing import Callable, Final, Protocol, TypedDict
+from async_reolink.api.led import typing as led_typing
 from async_reolink.api.typing import PercentValue, SimpleTime as SimpleTimeType
 from async_reolink.api.model import SimpleTime
 
+from .._utilities import providers
+
 from .. import model
-from ..typing import FactoryValue
 
 from ..ai.model import AITypesMap, MutableAITypesMap
 
 # pylint: disable=missing-function-docstring
 
 
-class LightingSchedule(typing.LightingSchedule):
+class LightingSchedule(providers.DictProvider[str, any], led_typing.LightingSchedule):
     """Lighting Schedule"""
 
-    __slots__ = ("_factory",)
+    __slots__ = ()
 
-    _START_PFX: Final = "Start"
-    _END_PFX: Final = "End"
-
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        super().__init__()
-        self._factory = factory
+    _START_PREFIX: Final = "Start"
+    _END_PREFIX: Final = "End"
 
     @property
     def start(self):
-        return model.SimpleTime(self._factory, self._START_PFX)
+        return model.SimpleTime(self._provided_value, self._START_PREFIX)
 
     @property
     def end(self):
-        return model.SimpleTime(self._factory, self._END_PFX)
-
-    def _copy(self):
-        _s = self.start._copy()
-        _e = self.end._copy()
-        if not _s and not _e:
-            return None
-        if _s and _e:
-            return _s.update(_e)
-        if _s:
-            return _s
-        return _e
+        return model.SimpleTime(self._provided_value, self._END_PREFIX)
 
 
 class MutableLightingSchedule(LightingSchedule):
     """Mutable Lighting schedule"""
 
-    def __init__(self, factory: FactoryValue[dict]) -> None:
-        super().__init__(factory)
-        self._factory = factory
-
     @property
     def start(self):
-        return model.MutableSimpleTime(self._factory, self._START_PFX)
+        return model.MutableSimpleTime(self._get_value, self._START_PREFIX)
 
     @start.setter
     def start(self, value):
@@ -62,16 +44,16 @@ class MutableLightingSchedule(LightingSchedule):
 
     @property
     def end(self):
-        return model.MutableSimpleTime(self._factory, self._END_PFX)
+        return model.MutableSimpleTime(self._get_value, self._END_PREFIX)
 
     @end.setter
     def end(self, value):
         self.end.update(value)
 
-    def update(self, value: typing.LightingSchedule):
+    def update(self, value: led_typing.LightingSchedule):
         if isinstance(value, LightingSchedule):
-            if (_d := value._copy()) and (_u := self._factory(True)):
-                _u.update(_d)
+            if _d := value._provided_value:
+                self._get_value(True).update(_d)
             return
         try:
             self.start = value.start
@@ -83,136 +65,141 @@ class MutableLightingSchedule(LightingSchedule):
             pass
 
 
-class WhiteLedInfo(typing.WhiteLedInfo):
+class WhiteLedInfo(providers.DictProvider[str, any], led_typing.WhiteLedInfo):
     """White Led Info"""
 
-    _BRIGHT_KEY: Final = "bright"
-    _AUTO_KEY: Final = "auto"
-    _MODE_KEY: Final = "mode"
-    _STATE_KEY: Final = "state"
-    _SCHED_KEY: Final = "LightingSchedule"
-    _AI_KEY: Final = "wlAiDetectType"
+    class JSON(TypedDict):
+        """JSON"""
 
-    __slots__ = ("_factory",)
+        bright: int
+        auto: int
+        mode: int
+        state: int
+        LightingSchedule: dict
+        wlAiDetectType: dict
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        super().__init__()
-        self._factory = factory
+    class Keys(Protocol):
+        """Keys"""
 
-    @property
-    def brightness(self) -> PercentValue:
-        if (value := self._factory()) is None:
-            return 100
-        return value.get(self._BRIGHT_KEY, 100)
+        brightness: Final = "bright"
+        auto_mode: Final = "auto"
+        brightness_state: Final = "mode"
+        state: Final = "state"
+        lighting_schedule: Final = "LightingSchedule"
+        ai_detection_type: Final = "wlAiDetectType"
 
-    @property
-    def auto_mode(self) -> bool:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._AUTO_KEY, 0)
+    __slots__ = ()
 
-    @property
-    def brightness_state(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._MODE_KEY, 0)
+    _provided_value: JSON
 
     @property
-    def state(self) -> bool:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._STATE_KEY, 0)
+    def brightness(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.brightness)
+        return None
 
-    def _get_sched(self) -> dict:
-        if (value := self._factory()) is None:
-            return None
-        return value.get(self._SCHED_KEY, None)
+    @property
+    def auto_mode(self):
+        return (
+            True if (value := self._provided_value) and value.get(self.Keys.auto_mode, 0) else False
+        )
+
+    @property
+    def brightness_state(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.brightness_state, 0)
+        return 0
+
+    @property
+    def state(self):
+        return True if (value := self._provided_value) and value.get(self.Keys.state, 0) else False
+
+    def _get_lighting_schedule(self, create=False) -> dict:
+        if value := self._get_value(create):
+            return value.get(self.Keys.lighting_schedule)
+        return None
+
+    _lighting_schedule: dict = property(_get_lighting_schedule)
 
     @property
     def lighting_schedule(self):
-        return LightingSchedule(self._get_sched)
+        return LightingSchedule(self._get_lighting_schedule)
 
-    def _get_ai(self) -> dict:
-        if (value := self._factory()) is None:
-            return None
-        return value.get(self._AI_KEY, None)
+    def _get_ai_detection_type(self, create=False) -> dict:
+        if value := self._get_value(create):
+            return value.get(self.Keys.ai_detection_type)
+        return None
+
+    _ai_detection_type: dict = property(_get_ai_detection_type)
 
     @property
     def ai_detection_type(self):
-        return AITypesMap(self._get_ai)
-
-    def _copy(self):
-        if not (_d := self._factory()):
-            return None
-        _d = _d.copy()
-        if _d2 := self.lighting_schedule._copy():
-            _d[self._SCHED_KEY] = _d2
-        if _d2 := self.ai_detection_type._copy():
-            _d[self._AI_KEY] = _d2
-        return _d
+        return AITypesMap(self._get_ai_detection_type)
 
 
 class MutableWhiteLedInfo(WhiteLedInfo):
     """White Led Info"""
 
-    def __init__(self, factory: FactoryValue[dict]) -> None:
-        super().__init__(factory)
-        self._factory = factory
+    __slots__ = ()
+
+    def _get_value(self, create=False):
+        if (value := super()._get_value(create)) or not create:
+            return value
+        value = {}
+        self._set_value(value)
+        return value
 
     @WhiteLedInfo.brightness.setter
     def brightness(self, value):
-        if (_d := self._factory(True)) is not None:
-            _d[self._BRIGHT_KEY] = int(value)
+        self._get_value(True)[self.Keys.brightness] = int(value)
 
     @WhiteLedInfo.auto_mode.setter
     def auto_mode(self, value):
-        if (_d := self._factory(True)) is not None:
-            _d[self._AUTO_KEY] = int(value)
+        self._get_value(True)[self.Keys.auto_mode] = int(bool(value))
 
     @WhiteLedInfo.brightness_state.setter
     def brightness_state(self, value):
-        if (_d := self._factory(True)) is not None:
-            _d[self._MODE_KEY] = int(value)
+        self._get_value(True)[self.Keys.brightness_state] = int(value)
 
     @WhiteLedInfo.state.setter
     def state(self, value):
-        if (_d := self._factory(True)) is not None:
-            _d[self._STATE_KEY] = int(value)
+        self._get_value(True)[self.Keys.state] = int(bool(value))
 
-    def _get_sched(self, create=False) -> dict:
-        if not create:
-            return super()._get_sched()
-        if (value := self._factory(True)) is None:
-            return None
-        return value.setdefault(self._SCHED_KEY, {})
+    def _get_lighting_schedule(self, create=False) -> dict:
+        if (value := super()._get_lighting_schedule(create)) or not create:
+            return value
+        return self._get_value(True).setdefault(self.Keys.lighting_schedule, {})
 
     @property
     def lighting_schedule(self):
-        return MutableLightingSchedule(self._get_sched)
+        return MutableLightingSchedule(self._get_lighting_schedule)
 
     @lighting_schedule.setter
-    def lighting_schedule(self, value: typing.LightingSchedule):
+    def lighting_schedule(self, value: led_typing.LightingSchedule):
         self.lighting_schedule.update(value)
 
-    def _get_ai(self, create=False) -> dict:
-        if not create:
-            return super()._get_ai()
-        if (value := self._factory(True)) is None:
-            return None
-        return value.setdefault(self._AI_KEY, {})
+    def _get_ai_detection_type(self, create=False) -> dict:
+        if (value := super()._get_ai_detection_type(create)) or not create:
+            return value
+        return self._get_value(True).setdefault(self.Keys.ai_detection_type, {})
 
     @property
     def ai_detection_type(self):
-        return MutableAITypesMap(self._get_ai)
+        return MutableAITypesMap(self._get_ai_detection_type)
 
     @ai_detection_type.setter
     def ai_detection_type(self, value):
         self.ai_detection_type.update(value)
 
-    def update(self, value: typing.WhiteLedInfo):
+    def update(self, value: led_typing.WhiteLedInfo):
         if isinstance(value, WhiteLedInfo):
-            if (_d := value._copy()) and (_u := self._factory(True)):
-                _u.update(_d)
+            if not (_d := value._provided_value):
+                return
+            for _k in (self.Keys.ai_detection_type, self.Keys.lighting_schedule):
+                if _k in _d:
+                    _d[_k] = _d[_k].copy()
+
+            self._get_value(True).update(_d)
             return
         try:
             self.auto_mode = value.auto_mode

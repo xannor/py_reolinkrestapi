@@ -2,17 +2,21 @@
 
 from abc import ABC
 from enum import IntEnum
+import json
 from typing import (
-    Callable,
     Final,
+    Protocol,
     TypeGuard,
     TypeVar,
+    TypedDict,
 )
+from typing_extensions import NotRequired
 
-from async_reolink.api.connection import model, typing
+from async_reolink.api.connection import model as connection_model, typing as connection_typing
 
-_COMMAND_KEY: Final = "cmd"
-_ACTION_KEY: Final = "action"
+from .._utilities.json import SupportsJSON
+
+from .._utilities import providers
 
 # pylint: disable=missing-function-docstring
 
@@ -24,144 +28,212 @@ class ResponseTypes(IntEnum):
     DETAILED = 1
 
 
-class Request(model.Request):
+_DefaultResponseType: Final = ResponseTypes.VALUE_ONLY
+
+
+class CommandJSON(TypedDict):
+    """Command JSON"""
+
+    cmd: str
+
+
+class CommandKeys(Protocol):
+    """Keys"""
+
+    command: Final = "cmd"
+
+
+class Request(providers.DictProvider[str, any], connection_model.Request, SupportsJSON):
     """Rest Request"""
 
-    __slots__ = ("_request",)
+    class JSON(CommandJSON):
+        """JSON"""
+
+        action: int
+        param: dict
+
+    class Keys(CommandKeys, Protocol):
+        """Keys"""
+
+        response_type: Final = "action"
+        parameter: Final = "param"
+
+    __slots__ = ()
 
     id = property(id)
 
-    def __init__(self):
-        super().__init__()
-        self._request = {}
+    def __init__(self, /, **kwargs: any):
+        super().__init__(None)
 
-    def _get_request(self):
-        return self._request
+    def __json__(self, _encoder: json.JSONEncoder):
+        return self._provided_value
 
-    def _get_parameter(self, create=False) -> dict:
-        _key: Final = "param"
+    def _get_provided_value(self, create=False):
+        if (value := super()._get_provided_value(create)) is not None or not create:
+            return value
+        value = {}
+        self._set_provided_value(value)
+        return value
 
-        if _key in self._request or not create:
-            return self._request.get(_key, None)
-        return self._request.setdefault(_key, {})
-
-    @property
-    def _parameter(self):
-        return self._get_parameter(True)
+    _value: JSON
 
     @property
-    def command(self) -> str:
-        return self._request.get(_COMMAND_KEY, "")
+    def command(self):
+        if value := self._value:
+            return value.get(self.Keys.command, "")
+        return ""
 
     @command.setter
     def command(self, value):
-        self._request[_COMMAND_KEY] = value
+        self._get_provided_value(True)[self.Keys.command] = str(value)
 
     @property
-    def response_type(self) -> ResponseTypes:
-        return self._request.get(_ACTION_KEY, ResponseTypes.VALUE_ONLY)
+    def response_type(self):
+        if value := self._value:
+            return ResponseTypes(value.get(Request.Keys.response_type, _DefaultResponseType))
+        return _DefaultResponseType
 
     @response_type.setter
     def response_type(self, value):
-        self._request[_ACTION_KEY] = value
+        self._get_provided_value(True)[self.Keys.response_type] = ResponseTypes(value)
+
+    def _get_parameter(self, create=False) -> dict[str, any]:
+        return self._get_key_value(
+            self._get_provided_value,
+            self.Keys.parameter,
+            create,
+            default=lambda: dict() if create else None,
+        )
+
+    @property
+    def _parameter(self):
+        return self._get_parameter()
 
 
-_CHANNEL_KEY: Final = "channel"
+class ChannelJSON(TypedDict):
+
+    channel: int
 
 
-class RequestWithChannel(Request, typing.ChannelValue):
+class ChannelKeys(Protocol):
+
+    channel_id: Final = "channel"
+
+
+class RequestWithChannel(Request, connection_typing.ChannelValue):
     """Rest Request with Channel Parameter"""
+
+    class Parameter(Protocol):
+        """Parameter"""
+
+        class JSON(ChannelJSON):
+            """JSON"""
+
+        class Keys(ChannelKeys, Protocol):
+            """Keys"""
+
+    _parameter: Parameter.JSON
 
     __slots__ = ()
 
     @property
     def channel_id(self):
-        return (
-            parameter.get(_CHANNEL_KEY, 0)
-            if (parameter := self._get_parameter()) is not None
-            else 0
-        )
+        if value := self._parameter:
+            return value.get(self.Parameter.Keys.channel_id, 0)
+        return 0
 
     @channel_id.setter
     def channel_id(self, value):
-        self._parameter[_CHANNEL_KEY] = value
+        self._get_parameter(True)[self.Parameter.Keys.channel_id] = int(value)
 
-
-_VALUE_KEY: Final = "value"
-_CODE_KEY: Final = "code"
-_ERROR_KEY: Final = "error"
 
 T = TypeVar("T")
 
 
-class Response(model.Response, ABC):
+class Response(connection_model.Response, providers.DictProvider[str, any]):
     """Rest Response"""
 
+    class JSON(CommandJSON):
+        """JSON"""
+
+        code: int
+        value: NotRequired[dict[str, any]]
+        initial: NotRequired[dict[str, any]]
+        range: NotRequired[dict[str, any]]
+        error: NotRequired[dict[str, any]]
+
+    class Keys(CommandKeys, Protocol):
+        """Keys"""
+
+        code: Final = "code"
+        value: Final = "value"
+        initial: Final = "initial"
+        range: Final = "range"
+        error: Final = "error"
+
     @classmethod
-    def is_response(cls, value: any, /, command: str | None = None) -> TypeGuard[dict]:
+    def is_response(cls, value: any, /, command: str | None = None) -> TypeGuard[JSON]:
         """value is command response json"""
         return (
             isinstance(value, dict)
-            and _COMMAND_KEY in value
-            and _CODE_KEY in value
-            and (command is None or command == value[_COMMAND_KEY])
+            and cls.Keys.command in value
+            and cls.Keys.code in value
+            and (command is None or command == value[cls.Keys.command])
         )
 
     @classmethod
     def is_value(cls, response: dict):
         """response is a command value response"""
-        return _VALUE_KEY in response and isinstance(response[_VALUE_KEY], dict)
+        return cls.Keys.value in response and isinstance(response[cls.Keys.value], dict)
 
-    __slots__ = ("_response", "_request_id")
+    __slots__ = ("__request_id",)
 
-    def __init__(self, response: dict, /, request_id: int | None = None) -> None:
-        super().__init__()
-        self._response = response
-        self._request_id = request_id
+    def __init__(self, response: JSON, /, request_id: int = None, **kwargs: any) -> None:
+        super().__init__(**kwargs)
+        providers.DictProvider.__init__(self, response)
+        self.__request_id = request_id
+
+    @property
+    def _response(self) -> JSON:
+        return self._provided_value
 
     @property
     def request_id(self):
-        return self._request_id
+        return self.__request_id
 
-    def _underlying_value(self):
-        return self._response
+    @property
+    def _value(self):
+        return value.get(self.Keys.value) if (value := self._response) else None
+
+    @property
+    def _initial(self):
+        return value.get(self.Keys.initial) if (value := self._response) else None
+
+    @property
+    def _range(self):
+        return value.get(self.Keys.range) if (value := self._response) else None
 
     @property
     def is_detailed(self):
-        return self._get_initial() is not None or self._get_range() is not None
+        if not (value := self._response):
+            return False
+        return any(k in value for k in (self.Keys.initial, self.Keys.range))
 
     @property
-    def command(self) -> str:
-        return self._response.get(_COMMAND_KEY, "")
+    def command(self):
+        if value := self._response:
+            return value.get(self.Keys.command, "")
+        return ""
 
     @property
-    def code(self) -> int:
-        return self._response.get(_CODE_KEY, 0)
+    def code(self):
+        if value := self._response:
+            return value.get(self.Keys.code, 0)
+        return 0
 
-    def _get_value(self) -> dict:
-        return self._response.get(_VALUE_KEY, None)
-
-    def _get_initial(self) -> dict:
-        return self._response.get("initial", None)
-
-    def _get_range(self) -> dict:
-        return self._response.get("range", None)
-
-    def _get_error(self) -> dict:
-        return self._response.get(_ERROR_KEY, None)
-
-    def _get_sub_key(
-        self, key: str, factory: Callable[[], dict], __type: Callable[[any], T] = None
-    ):
-        def get() -> T:
-            return _d.get(key, None) if (_d := factory()) else None
-
-        return get
-
-    def _get_sub_value(
-        self, key: str, factory: Callable[[], dict], __type: Callable[[any], T] = None
-    ):
-        return self._get_sub_key(key, factory, __type)()
+    @property
+    def _error(self):
+        return value.get(self.Keys.error) if (value := self._response) else None
 
 
 class UnhandledResponse(Response):
@@ -170,73 +242,123 @@ class UnhandledResponse(Response):
     __slots__ = ()
 
 
-_RSP_CODE_KEY: Final = "rspCode"
+# _RSP_CODE_KEY: Final = "rspCode"
 
 
-class ResponseWithCode(Response, typing.ResponseCode):
+class ResponseCodeJSON(TypedDict):
+    """Response Code JSON"""
+
+    rspCode: int
+
+
+class ResponseCodeKeys(Protocol):
+    """Response Code Keys"""
+
+    response_code: Final = "rspCode"
+
+
+class ResponseWithCode(Response, connection_typing.ResponseCode):
     """REST Command Response with code"""
 
+    class Value(Protocol):
+        """Value"""
+
+        class JSON(ResponseCodeJSON):
+            """JSON"""
+
+        class Keys(ResponseCodeKeys, Protocol):
+            """Keys"""
+
+    _value: Value.JSON
+
     @classmethod
-    def from_response(cls, response: any, /, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if (
             cls.is_response(response, command=request.command if request else None)
             and cls.is_value(response)
-            and _RSP_CODE_KEY in response[_VALUE_KEY]
+            and cls.Value.Keys.response_code in response[cls.Keys.value]
         ):
-            return cls(response, request.id if request else None)
+            return cls(response, request.id if request else None, **kwargs)
         return None
 
     __slots__ = ()
 
     @property
     def response_code(self):
-        return value.get(_RSP_CODE_KEY, 0) if (value := self._get_value()) is not None else 0
+        if value := self._value:
+            return value.get(self.Value.Keys.response_code, 0)
+        return 0
 
 
-class ResponseWithChannel(Response, typing.ChannelValue, ABC):
+class ResponseWithChannel(Response, connection_typing.ChannelValue, ABC):
     """Rest Response Value with Channel"""
+
+    class Value(Protocol):
+        """Value"""
+
+        class JSON(ChannelJSON):
+            """JSON"""
+
+        class Keys(ChannelKeys, Protocol):
+            """Keys"""
 
     __slots__ = ("_fallback_channel_id",)
 
     def __init__(
-        self,
-        response: dict,
-        /,
-        request_id: int | None = None,
-        fallback_channel_id: int | None = None,
+        self, response: dict, /, fallback_channel_id: int | None = None, **kwargs: any
     ) -> None:
-        super().__init__(response, request_id)
+        super().__init__(response, **kwargs)
         self._fallback_channel_id = fallback_channel_id or 0
+
+    _value: Value.JSON
 
     @property
     def channel_id(self):
-        return (
-            value.get(_CHANNEL_KEY, self._fallback_channel_id)
-            if (value := self._get_value()) is not None
-            else self._fallback_channel_id
-        )
+        if value := self._value:
+            return value.get(self.Value.Keys.channel_id, 0)
+        return 0
 
 
-class ErrorResponse(Response, model.ErrorResponse):
+class ErrorResponse(Response, connection_model.ErrorResponse):
     """Rest Error Response"""
+
+    class Error(Protocol):
+        """Error"""
+
+        class JSON(ResponseCodeJSON):
+            """JSON"""
+
+            detail: str
+
+        class Keys(Protocol):
+            """Keys"""
+
+            error_code: Final = ResponseCodeKeys.response_code
+            details: Final = "detail"
+
+    _error: Error.JSON
 
     __slots__ = ()
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if cls.is_response(response) and cls.is_error(response):
-            return cls(response, request.id if request else None)
+            return cls(response, request.id if request else None, **kwargs)
         return None
 
     @classmethod
     def is_error(cls, response: dict):
         """response is a command error response"""
-        return _ERROR_KEY in response and isinstance(response[_ERROR_KEY], dict)
+        return cls.Keys.error in response and isinstance(response[cls.Keys.error], dict)
 
     @property
-    def error_code(self) -> int:
-        return value.get(_RSP_CODE_KEY, 0) if (value := self._get_error()) is not None else 0
+    def error_code(self):
+        if value := self._error:
+            return value.get(self.Error.Keys.error_code, 0)
+        return 0
 
     @property
-    def details(self) -> str | None:
-        return value.get("detail", 0) if (value := self._get_error()) is not None else 0
+    def details(self):
+        if value := self._error:
+            return value.get(self.Error.Keys.details)
+        return None

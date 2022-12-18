@@ -6,37 +6,25 @@ from typing import (
     Final,
     Iterable,
     MutableSequence,
+    Protocol,
+    TypedDict,
     cast,
 )
 from async_reolink.api.ptz import command as ptz
-from async_reolink.api.ptz import typing
+from async_reolink.api.ptz import typing as ptz_typing
 
+from .._utilities import providers
 from .._utilities.dictlist import DictList
 
-from ..model import MinMaxRange, StringRange
+from .. import model
 
-from .typing import (
-    OPERATION_STR_MAP,
-    STR_OPERATION_MAP,
-    STR_ZOOMOPERATION_MAP,
-    ZOOMOPERATION_STR_MAP,
-)
+from ..ptz.typing import operation_str, zoom_operation_str
 
-from .model import (
-    MutablePreset,
-    Preset,
-    _ID_KEY,
-    MutablePatrol,
-    Patrol,
-    MutableTrack,
-    Track,
-    ZoomFocus,
-)
-
-from ..typing import FactoryValue
+from . import model as local_model
 
 from ..connection.model import (
-    _CHANNEL_KEY,
+    ChannelJSON,
+    ChannelKeys,
     Request,
     RequestWithChannel,
     Response as RestCommandResponse,
@@ -52,6 +40,7 @@ class GetPresetRequest(RequestWithChannel, ptz.GetPresetRequest):
     __slots__ = ()
 
     COMMAND: Final = "GetPtzPreset"
+    _COMMAND_ID: Final = hash(COMMAND)
 
     def __init__(
         self,
@@ -63,83 +52,128 @@ class GetPresetRequest(RequestWithChannel, ptz.GetPresetRequest):
         self.response_type = response_type
         self.channel_id = channel_id
 
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
-_PRESET_KEY: Final = "PtzPreset"
 
+class _PresetRange(providers.DictProvider):
+    class JSON(TypedDict):
+        """JSON"""
 
-class _PresetRange:
-    __slots__ = ("_value",)
+        id: model.MinMaxRange.JSON
+        name: model.StringRange.JSON
 
-    def __init__(self, value: dict) -> None:
-        self._value = value
+    class Keys(local_model.Preset.Keys):
+        """Keys"""
 
-    def _factory(self):
-        return self._value
-
-    def _keyed_factory(self, key: str):
-        def _factory() -> dict:
-            return value.get(key, None) if (value := self._factory()) is not None else None
-
-        return _factory
+    __slots__ = ()
 
     @property
     def id(self):
-        return MinMaxRange("", self._keyed_factory("id"))
+        return model.MinMaxRange(
+            lambda _: self._get_key_value(self._get_provided_value, self.Keys.id, default=None)
+        )
 
     @property
     def name(self):
-        return StringRange(self._keyed_factory("name"))
+        return model.StringRange(
+            lambda _: self._get_key_value(self._get_provided_value, self.Keys.name, default=None)
+        )
 
 
 class GetPresetResponse(RestCommandResponse, ptz.GetPresetResponse):
     """Get Presets Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetPresetRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
 
     __slots__ = ()
 
-    def _get_sub_value(self, factory: Callable[[], dict]) -> list:
-        return value.get(_PRESET_KEY, None) if (value := factory()) is not None else None
+    class Value(Protocol):
+        """Protocol"""
+
+        class Preset(Protocol):
+            """Preset"""
+
+            class JSON(ChannelJSON, local_model.Preset.JSON):
+                """JSON"""
+
+            class Keys(ChannelKeys, local_model.Preset.Keys, Protocol):
+                """Keys"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            PtzPreset: list["GetPresetResponse.Value.Preset.JSON"]
+
+        class Keys(Protocol):
+            """Keys"""
+
+            presets: Final = "PtzPreset"
+
+    _value: Value.JSON
 
     @property
-    def channel_id(self) -> int:
-        if (_list := self._get_sub_value(self._get_value)) is None:
-            return None
-        if (value := next(iter(_list), None)) is None:
-            return None
-        if TYPE_CHECKING:
-            value = cast(dict, value)
-        return value.get(_CHANNEL_KEY, None)
+    def _presets(self):
+        return value.get(self.Value.Keys.presets) if (value := self._value) else None
 
     @property
-    def presets(self):
-        return DictList(_ID_KEY, self._get_sub_value(self._get_value), Preset)
+    def channel_id(self):
+        if (_l := self._presets) and (value := next(iter(_l), None)):
+            return value.get(self.Value.Preset.Keys.channel_id, 0)
+        return 0
+
+    @property
+    def presets(self) -> DictList[int, local_model.Preset]:
+        return DictList(self.Value.Preset.Keys.id, self._presets, local_model.Preset)
+
+    @property
+    def _initial_presets(self):
+        return value.get(self.Value.Keys.presets) if (value := self._initial) else None
 
     @property
     def initial_presets(self):
-        return DictList(_ID_KEY, self._get_sub_value(self._get_initial), Preset)
+        return local_model.Preset(lambda _: self._initial_presets)
+
+    @property
+    def _presets_range(self):
+        return value.get(self.Value.Keys.presets) if (value := self._range) else None
 
     @property
     def presets_range(self):
-        if (value := self._get_range()) is not None:
-            value = value.get(_PRESET_KEY)
-        return _PresetRange(value)
+        return _PresetRange(self._presets_range)
 
 
 class SetPresetRequest(Request, ptz.SetPresetRequest):
     """Set Preset Request"""
 
+    class Parameter(Protocol):
+        """Parameter"""
+
+        class Preset(GetPresetResponse.Value.Preset, Protocol):
+            """Preset"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            PtzPreset: "SetPresetRequest.Parameter.Preset.JSON"
+
+        class Keys(Protocol):
+            """Keys"""
+
+            preset: Final = GetPresetResponse.Value.Keys.presets
+
     __slots__ = ()
 
     COMMAND: Final = "SetPtzPreset"
+    _COMMAND_ID: Final = hash(COMMAND)
 
     def __init__(
         self,
-        preset: typing.Preset = None,
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
@@ -147,44 +181,42 @@ class SetPresetRequest(Request, ptz.SetPresetRequest):
         self.command = type(self).COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
-        if preset is not None:
-            self.preset = preset
-
-    def _get_sub_value(self, create=False) -> dict:
-        _key: Final = _PRESET_KEY
-        if (parameter := self._get_parameter(create)) is None:
-            return None
-        if _key in parameter or not create:
-            return parameter.get(_key, None)
-        return parameter.setdefault(_key, {})
 
     @property
-    def _sub_value(self):
-        return self._get_sub_value(True)
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
+
+    _parameter: Parameter.JSON
+
+    def _get_preset(self, create=False) -> Parameter.Preset.JSON:
+        return self._get_key_value(
+            self._get_parameter,
+            self.Parameter.Keys.preset,
+            create,
+            lambda: dict() if create else None,
+        )
 
     @property
-    def channel_id(self) -> int:
-        if (value := self._get_sub_value()) is None:
-            return 0
-        return value.get(_CHANNEL_KEY, 0)
+    def _preset(self):
+        return self._get_preset()
+
+    @property
+    def channel_id(self):
+        if value := self._preset:
+            return value.get(self.Parameter.Preset.Keys.channel_id, 0)
+        return 0
 
     @channel_id.setter
     def channel_id(self, value):
-        self._sub_value[_CHANNEL_KEY] = value
+        self._get_preset(True)[self.Parameter.Preset.Keys.channel_id] = int(value)
 
     @property
     def preset(self):
-        return MutablePreset(self._get_sub_value)
+        return local_model.MutablePreset(self._get_preset)
 
     @preset.setter
     def preset(self, value):
-        if not isinstance(value, MutablePreset):
-            value = MutablePreset(value)
-        # pylint: disable=protected-access
-        self._parameter[_PRESET_KEY] = value._factory(True)
-
-
-_PATROL_KEY: Final = "PtzPatrol"
+        self.preset.update(value)
 
 
 class GetPatrolRequest(RequestWithChannel, ptz.GetPatrolRequest):
@@ -193,6 +225,11 @@ class GetPatrolRequest(RequestWithChannel, ptz.GetPatrolRequest):
     __slots__ = ()
 
     COMMAND: Final = "GetPtzPatrol"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
     def __init__(
         self,
@@ -205,100 +242,170 @@ class GetPatrolRequest(RequestWithChannel, ptz.GetPatrolRequest):
         self.channel_id = channel_id
 
 
-class _PatrolPresetRange:
-    __slots__ = ("_factory",)
+class _PatrolPresetRange(providers.DictProvider[str, any]):
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+        id: model.MinMaxRange.JSON
+        dwellTime: model.MinMaxRange.JSON
+        speed: model.MinMaxRange.JSON
 
-    def _keyed_factory(self, key: str):
-        def _factory() -> dict:
-            return value.get(key, None) if (value := self._factory()) is not None else None
+    class Keys(Protocol):
+        """Keys"""
 
-        return _factory
+        id: Final = "id"
+        dwell_time: Final = "dwellTime"
+        speed: Final = "speed"
+
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
     def id(self):
-        return MinMaxRange("", self._keyed_factory("id"))
+        return model.MinMaxRange(
+            lambda _: value.get(self.Keys.id) if (value := self._provided_value) else None
+        )
 
     @property
     def dwell_time(self):
-        return MinMaxRange("", self._keyed_factory("dwellTime"))
+        return model.MinMaxRange(
+            lambda _: value.get(self.Keys.dwell_time) if (value := self._provided_value) else None
+        )
 
     @property
     def speed(self):
-        return MinMaxRange("", self._keyed_factory("speed"))
+        return model.MinMaxRange(
+            lambda _: value.get(self.Keys.speed) if (value := self._provided_value) else None
+        )
 
 
-class _PatrolRange:
-    __slots__ = ("_value",)
+class _PatrolRange(providers.DictProvider[str, any]):
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, value: dict) -> None:
-        self._value = value
+        id: model.MinMaxRange.JSON
+        name: model.StringRange.JSON
+        preset: _PatrolPresetRange.JSON
 
-    def _factory(self):
-        return self._value
+    class Keys(Protocol):
+        """Keys"""
 
-    def _keyed_factory(self, key: str):
-        def _factory() -> dict:
-            return value.get(key, None) if (value := self._factory()) is not None else None
+        id: Final = "id"
+        name: Final = "name"
+        preset: Final = "preset"
 
-        return _factory
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
     def id(self):
-        return MinMaxRange("", self._keyed_factory("id"))
+        return model.MinMaxRange(
+            lambda _: value.get(self.Keys.id) if (value := self._provided_value) else None
+        )
 
     @property
     def name(self):
-        return StringRange(self._keyed_factory("name"))
+        return model.StringRange(
+            lambda _: value.get(self.Keys.name) if (value := self._provided_value) else None
+        )
 
     @property
     def preset(self):
-        return _PatrolPresetRange(self._keyed_factory("preset"))
+        return _PatrolPresetRange(
+            lambda _: value.get(self.Keys.preset) if (value := self._provided_value) else None
+        )
 
 
 class GetPatrolResponse(RestCommandResponse, ptz.GetPatrolResponse):
     """Get Patrol Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetPatrolRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
+
+    class Value(Protocol):
+        """Value"""
+
+        class Patrol(Protocol):
+            """Patrol"""
+
+            class JSON(ChannelJSON, local_model.Patrol.JSON):
+                """JSON"""
+
+            class Keys(ChannelKeys, local_model.Patrol.Keys, Protocol):
+                """Keys"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            PtzPatrol: list["GetPatrolResponse.Value.Patrol.JSON"]
+
+        class Keys(Protocol):
+            """Keys"""
+
+            patrols: Final = "PtzPatrol"
 
     __slots__ = ()
 
-    def _get_sub_value(self, factory: Callable[[], dict]) -> list:
-        return value.get(_PATROL_KEY, None) if (value := factory()) is not None else None
-
-    channel_id = GetPresetResponse.channel_id
+    _value: Value.JSON
 
     @property
-    def patrols(self):
-        return DictList(_ID_KEY, self._get_sub_value(self._get_value), Patrol)
+    def _patrols(self):
+        return value.get(self.Value.Keys.patrols) if (value := self._value) else None
 
     @property
-    def initial_presets(self):
-        return DictList(_ID_KEY, self._get_sub_value(self._get_initial), Patrol)
+    def channel_id(self):
+        if (_l := self._patrols) and (value := next(iter(_l), None)):
+            return value.get(self.Value.Patrol.Keys.channel_id, 0)
+        return 0
 
     @property
-    def presets_range(self):
-        if (value := self._get_range()) is not None:
-            value = value.get(_PRESET_KEY)
-        return _PatrolRange(value)
+    def patrols(self) -> DictList[int, local_model.Patrol]:
+        return DictList(self.Value.Patrol.Keys.id, self._patrols, local_model.Patrol)
+
+    @property
+    def initial_patrol(self):
+        return local_model.Patrol(
+            lambda _: value.get(self.Value.Keys.patrols) if (value := self._initial) else None
+        )
+
+    @property
+    def patrol_range(self):
+        return _PatrolRange(
+            lambda _: value.get(self.Value.Keys.patrols) if (value := self._range) else None
+        )
 
 
 class SetPatrolRequest(Request, ptz.SetPatrolRequest):
     """Set  Patrol"""
 
+    class Parameter(Protocol):
+        """Parameter"""
+
+        class Patrol(GetPatrolResponse.Value.Patrol, Protocol):
+            """Patrol"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            PtzPatrol: "SetPatrolRequest.Parameter.Patrol.JSON"
+
+        class Keys(Protocol):
+            """Keys"""
+
+            patrol: Final = GetPatrolResponse.Value.Keys.patrols
+
     __slots__ = ()
 
     COMMAND: Final = "SetPtzPatrol"
+    _COMMAND_ID: Final = hash(COMMAND)
 
     def __init__(
         self,
-        patrol: typing.Patrol = None,
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
@@ -306,34 +413,39 @@ class SetPatrolRequest(Request, ptz.SetPatrolRequest):
         self.command = type(self).COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
-        if patrol is not None:
-            self.patrol = patrol
 
-    def _get_sub_value(self, create=False) -> dict:
-        _key: Final = _PATROL_KEY
-        if (parameter := self._get_parameter(create)) is None:
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
+
+    _parameter: Parameter.JSON
+
+    def _get_patrol(self, create=False) -> Parameter.Patrol.JSON:
+        if (value := self._get_parameter(create)) is None:
             return None
-        if _key in parameter or not create:
-            return parameter.get(_key, None)
-        return parameter.setdefault(_key, {})
+        return value.setdefault(self.Parameter.Keys.patrol, {})
 
-    _sub_value = SetPresetRequest._sub_value
+    @property
+    def _patrol(self):
+        return self._get_patrol()
 
-    channel_id = SetPresetRequest.channel_id
+    @property
+    def channel_id(self):
+        if value := self._patrol:
+            return value.get(self.Parameter.Patrol.Keys.channel_id, 0)
+        return 0
+
+    @channel_id.setter
+    def channel_id(self, value):
+        self._get_patrol(True)[self.Parameter.Patrol.Keys.channel_id] = int(value)
 
     @property
     def patrol(self):
-        return MutablePatrol(self._get_sub_value)
+        return local_model.MutablePatrol(self._get_patrol)
 
     @patrol.setter
     def patrol(self, value):
-        if not isinstance(value, MutablePatrol):
-            value = MutablePatrol(value)
-        # pylint: disable=protected-access
-        self._parameter[_PATROL_KEY] = value._factory(True)
-
-
-_TATTERN_KEY: Final = "PtzTattern"
+        self.patrol.update(value)
 
 
 class GetTatternRequest(RequestWithChannel, ptz.GetTatternRequest):
@@ -342,6 +454,11 @@ class GetTatternRequest(RequestWithChannel, ptz.GetTatternRequest):
     __slots__ = ()
 
     COMMAND: Final = "GetPtzTattern"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
     def __init__(
         self,
@@ -354,141 +471,215 @@ class GetTatternRequest(RequestWithChannel, ptz.GetTatternRequest):
         self.channel_id = channel_id
 
 
-class _TrackRange:
-    __slots__ = ("_factory",)
+class _TrackRange(providers.DictProvider[str, any]):
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+        id: model.MinMaxRange.JSON
+        name: model.StringRange.JSON
 
-    def _keyed_factory(self, key: str):
-        def _factory() -> dict:
-            return value.get(key, None) if (value := self._factory()) is not None else None
+    class Keys(Protocol):
+        """Keys"""
 
-        return _factory
+        id: Final = "id"
+        name: Final = "name"
+
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
     def id(self):
-        return MinMaxRange("", self._keyed_factory("id"))
+        return model.MinMaxRange(
+            lambda _: value.get(self.Keys.id) if (value := self._provided_value) else None
+        )
 
     @property
     def name(self):
-        return StringRange(self._keyed_factory("name"))
+        return model.StringRange(
+            lambda _: value.get(self.Keys.name) if (value := self._provided_value) else None
+        )
 
 
-class _TracksRange:
-    __slots__ = ("_value",)
+class _TracksRange(providers.DictProvider[str, any]):
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, value: dict) -> None:
-        self._value = value
+        track: _TrackRange.JSON
 
-    def _factory(self):
-        return self._value
+    class Keys(Protocol):
+        """Keys"""
 
-    def _keyed_factory(self, key: str):
-        def _factory() -> dict:
-            return value.get(key, None) if (value := self._factory()) is not None else None
+        track: Final = "track"
 
-        return _factory
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
     def track(self):
-        return _TrackRange(self._keyed_factory("track"))
+        return _TrackRange(
+            lambda _: value.get(self.Keys.track) if (value := self._provided_value) else None
+        )
 
 
 class GetTatternResponse(RestCommandResponse, ptz.GetTatternResponse):
     """Get Tattern Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetTatternRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
+
+    class Value(Protocol):
+        """Value"""
+
+        class Tattern(Protocol):
+            """Track"""
+
+            class JSON(ChannelJSON):
+                """JSON"""
+
+                track: list[local_model.Track.JSON]
+
+            class Keys(ChannelKeys, Protocol):
+                """Keys"""
+
+                tracks: Final = "track"
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            PtzTattern: "GetTatternResponse.Value.Tattern.JSON"
+
+        class Keys(Protocol):
+            """Keys"""
+
+            tattern: Final = "PtzTattern"
+
+    class Range(Protocol):
+        """Range"""
+
+        class Tattern(Protocol):
+            """Tattern"""
+
+            class JSON(TypedDict):
+                """JSON"""
+
+                track: _TrackRange.JSON
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            PtzTattern: "GetTatternResponse.Range.Tattern.JSON"
 
     __slots__ = ()
 
-    def _get_sub_value(self) -> dict:
-        return value.get(_TATTERN_KEY, None) if (value := self._get_value()) is not None else None
+    _value: Value.JSON
 
-    def _get_tracks(self) -> list:
-        if (value := self._get_sub_value()) is None:
-            return None
-        return value.get("track", None)
+    def _get_tattern(self, create=False):
+        if value := self._value:
+            return value.get(self.Value.Keys.tattern)
+        return None
 
     @property
-    def channel_id(self) -> int:
-        return value.get(_CHANNEL_KEY, 0) if (value := self._get_sub_value()) is not None else 0
+    def _tattern(self):
+        return value.get(self.Value.Keys.tattern) if (value := self._value) else None
+
+    @property
+    def _tracks(self):
+        return value.get(self.Value.Tattern.Keys.tracks) if (value := self._tattern) else None
+
+    @property
+    def channel_id(self):
+        if value := self._tattern:
+            return value.get(self.Value.Tattern.Keys.channel_id, 0)
+        return 0
 
     @property
     def tracks(self):
-        return DictList(_ID_KEY, self._get_tracks, Track)
+        return DictList(local_model.Track.Keys.id, self._tracks, local_model.Track)
+
+    _initial: Value.JSON
 
     @property
-    def initial_tracks(self):
-        return DictList(_ID_KEY, self._get_tracks, Track)
+    def _initial_tattern(self):
+        return value.get(self.Value.Keys.tattern) if (value := self._initial) else None
 
     @property
-    def presets_range(self):
-        if (value := self._get_range()) is not None:
-            value = value.get(_TATTERN_KEY)
-        return _TracksRange(value)
+    def _inital_tracks(self):
+        return (
+            value.get(self.Value.Tattern.Keys.tracks) if (value := self._initial_tattern) else None
+        )
+
+    @property
+    def initial_tracks(self) -> DictList[int, local_model.Track]:
+        return DictList(
+            local_model.Track.Keys.id,
+            self._inital_tracks,
+            local_model.Track,
+        )
+
+    _range: Range.JSON
+
+    @property
+    def _tattern_range(self):
+        return value.get(self.Value.Keys.tattern) if (value := self._range) else None
+
+    @property
+    def _track_range(self):
+        return value.get(self.Value.Tattern.Keys.track) if (value := self._tattern_range) else None
+
+    @property
+    def tracks_range(self):
+        return _TracksRange(self._track_range)
 
 
-class _MutableTracks(MutableSequence[MutableTrack]):
-    __slots__ = ("_factory",)
-
-    def __init__(self, factory: FactoryValue[list]) -> None:
-        super().__init__()
-        self._factory = factory
+class _MutableTracks(providers.ListProvider[dict[str, any]], MutableSequence[ptz_typing.Track]):
+    __slots__ = ()
 
     def __getitem__(self, __k: int):
-        def _factory():
-            if (value := self._factory()) is None:
-                return None
-            return value[__k]
+        return local_model.MutableTrack(
+            lambda create: self._get_index_value(
+                __k, create, default=lambda: dict() if create else None
+            )
+        )
 
-        return MutableTrack(_factory)
-
-    def __setitem__(self, __k: int, __v: MutableTrack):
-        if (value := self._factory(True)) is not None:
-            value[__k] = __v._factory(True)
+    def __setitem__(self, __k: int, __v: ptz_typing.Track):
+        self.__getitem__(__k).update(__v)
 
     def __delitem__(self, __k: int):
-        if (value := self._factory()) is not None:
-            del value[__k]
-
-    def _insert(self, index: int, value: dict):
-        if (_value := self._factory(True)) is not None:
-            _value.insert(index, value)
-
-    def append(self, value: typing.Track) -> None:
-        return super().append(value)
-
-    def insert(self, index: int, value: typing.Track):
-        if not isinstance(value, MutableTrack):
-            value = MutableTrack(value)
-        # pylint: disable=protected-access
-        self._insert(index, value._factory(True))
+        if _list := self._provided_value:
+            del _list[__k]
 
     def clear(self) -> None:
-        if (value := self._factory()) is not None:
+        if value := self._provided_value:
             value.clear()
 
     def __len__(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return len(value)
+        if value := self._provided_value:
+            return value.__len__()
+        return 0
 
 
 class SetTatternRequest(Request, ptz.SetTatternRequest):
     """Set PTZ Tattern"""
 
+    class Parameter(GetTatternResponse.Value, Protocol):
+        """Parameter"""
+
     __slots__ = ()
 
     COMMAND: Final = "SetPtzTattern"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
     def __init__(
         self,
-        *tracks: typing.Track,
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
@@ -496,41 +687,41 @@ class SetTatternRequest(Request, ptz.SetTatternRequest):
         self.command = type(self).COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
-        if len(tracks) > 0:
-            _tracks = self.tracks
-            for track in tracks:
-                _tracks.append(track)
 
-    def _get_sub_value(self, create=False) -> dict:
-        _key: Final = _TATTERN_KEY
-        if (parameter := self._get_parameter(create)) is None:
-            return None
-        if _key in parameter or not create:
-            return parameter.get(_key, None)
-        return parameter.setdefault(_key, {})
+    def _get_tattern(self, create=False) -> Parameter.Tattern.JSON:
+        return self._get_key_value(
+            self._get_parameter,
+            self.Parameter.Keys.tattern,
+            create,
+            lambda: dict() if create else None,
+        )
 
     @property
-    def _sub_value(self):
-        return self._get_sub_value(True)
+    def _tattern(self):
+        return self._get_tattern()
 
-    @GetTatternRequest.channel_id.setter
+    def _get_tracks(self, create=False) -> list[local_model.Track.JSON]:
+        return self._get_key_value(
+            self._get_tattern,
+            self.Parameter.Tattern.Keys.tracks,
+            create,
+            lambda: list() if create else None,
+        )
+
+    @property
+    def _tracks(self):
+        return self._get_tracks()
+
+    @GetTatternResponse.channel_id.setter
     def channel_id(self, value):
-        self._sub_value[_CHANNEL_KEY] = value
-
-    def _get_tracks(self, create=False) -> list:
-        _key: Final = "track"
-        if (value := self._get_sub_value(create)) is None:
-            return None
-        if _key in value or not create:
-            return value.get(_key, None)
-        return value.setdefault(_key, [])
+        self._get_tattern(True)[self.Parameter.Tattern.Keys.channel_id] = int(value)
 
     @property
     def tracks(self):
         return _MutableTracks(self._get_tracks)
 
     @tracks.setter
-    def tracks(self, value: Iterable[typing.Track]):
+    def tracks(self, value: Iterable[ptz_typing.Track]):
         _tracks = self.tracks
         _tracks.clear()
         for track in value:
@@ -543,6 +734,11 @@ class GetAutoFocusRequest(RequestWithChannel, ptz.GetAutoFocusRequest):
     __slots__ = ()
 
     COMMAND: Final = "GetAutoFocus"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
     def __init__(
         self,
@@ -555,41 +751,76 @@ class GetAutoFocusRequest(RequestWithChannel, ptz.GetAutoFocusRequest):
         self.channel_id = channel_id
 
 
-_AUTO_FOCUS_KEY: Final = "AutoFocus"
-_DISABLE_KEY: Final = "disable"
-
-
 class GetAutoFocusResponse(RestCommandResponse, ptz.GetAutoFocusResponse):
     """Get PTZ AutoFocus Response"""
 
+    class Value(Protocol):
+        """Value"""
+
+        class AutoFocus(Protocol):
+            """Auto Focus"""
+
+            class JSON(TypedDict):
+                """JSON"""
+
+                disable: int
+
+            class Keys(Protocol):
+                """Keys"""
+
+                disabled: Final = "disable"
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            AutoFocus: "GetAutoFocusResponse.Value.AutoFocus.JSON"
+
+        class Keys(Protocol):
+            """Keys"""
+
+            info: Final = "AutoFocus"
+
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetAutoFocusRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
 
     __slots__ = ()
 
-    def _get_sub_value(self) -> dict:
-        return (
-            value.get(_AUTO_FOCUS_KEY, None) if (value := self._get_value()) is not None else None
-        )
-
-    channel_id = GetTatternResponse.channel_id
+    _value: Value.JSON
 
     @property
-    def disabled(self) -> bool:
-        if (value := self._get_sub_value()) is None:
-            return 0
-        return value.get(_DISABLE_KEY, 0)
+    def _info(self):
+        if value := self._value:
+            return value.get(self.Value.Keys.info)
+        return None
+
+    channel_id = GetTatternResponse.channel_id.setter(None)
+
+    @property
+    def disabled(self):
+        return (
+            True
+            if (value := self._info) and value.get(self.Value.AutoFocus.Keys.disabled)
+            else False
+        )
 
 
 class SetAutoFocusRequest(RequestWithChannel, ptz.SetAutoFocusRequest):
     """Set PTZ AutoFocus"""
 
+    class Parameter(GetAutoFocusResponse.Value, Protocol):
+        """Parameter"""
+
     __slots__ = ()
 
     COMMAND: Final = "AutoFocus"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
     def __init__(
         self,
@@ -603,23 +834,23 @@ class SetAutoFocusRequest(RequestWithChannel, ptz.SetAutoFocusRequest):
         self.channel_id = channel_id
         self.disabled = disabled
 
-    def _get_sub_value(self, create=False) -> dict:
-        _key: Final = _AUTO_FOCUS_KEY
-        if (parameter := self._get_parameter(create)) is None:
-            return None
-        if _key in parameter or not create:
-            return parameter.get(_key, None)
-        return parameter.setdefault(_key, {})
+    def _get_info(self, create=False) -> Parameter.AutoFocus.JSON:
+        return self._get_key_value(
+            self._get_parameter,
+            self.Parameter.Keys.info,
+            create,
+            lambda: dict() if create else None,
+        )
 
     @property
-    def _sub_value(self):
-        return self._get_sub_value(True)
+    def _info(self):
+        return self._get_info()
 
-    channel_id = SetTatternRequest.channel_id
+    channel_id = SetTatternRequest.channel_id.setter(None)
 
     @GetAutoFocusResponse.disabled.setter
     def disabled(self, value):
-        self._sub_value[_DISABLE_KEY] = int(value)
+        self._get_info(True)[self.Parameter.AutoFocus.Keys.disabled] = int(bool(value))
 
 
 class GetZoomFocusRequest(RequestWithChannel, ptz.GetZoomFocusRequest):
@@ -628,6 +859,11 @@ class GetZoomFocusRequest(RequestWithChannel, ptz.GetZoomFocusRequest):
     __slots__ = ()
 
     COMMAND: Final = "GetZoomFocus"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
     def __init__(
         self,
@@ -640,90 +876,175 @@ class GetZoomFocusRequest(RequestWithChannel, ptz.GetZoomFocusRequest):
         self.channel_id = channel_id
 
 
-_ZOOMFOCUS_KEY: Final = "ZoomFocus"
+class _ZoomFocusRange(providers.DictProvider[str, any]):
+    class Position(Protocol):
+        """Position"""
 
+        class JSON(TypedDict):
+            """JSON"""
 
-class _ZoomFocusRange:
-    __slots__ = ("_value",)
+            pos: model.MinMaxRange.JSON
 
-    def __init__(self, value: dict) -> None:
-        self._value = value
+        class Keys(Protocol):
+            """Keys"""
 
-    def _factory(self):
-        return self._value
+            value: Final = "pos"
 
-    def _keyed_factory(self, key: str):
-        def _factory() -> dict:
-            return value.get(key, None) if (value := self._factory()) is not None else None
+    class JSON(TypedDict):
+        """JSON"""
 
-        return _factory
+        zoom: "_ZoomFocusRange.Position.JSON"
+        focus: "_ZoomFocusRange.Position.JSON"
 
-    def __repr__(self):
-        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
+    class Keys(Protocol):
+        """Keys"""
 
-    def _pos_keyed_factory(self, key: str):
-        __factory = self._keyed_factory(key)
+        zoom: Final = "zoom"
+        focus: Final = "focus"
 
-        def _factory() -> dict:
-            return value.get("pos", None) if (value := __factory()) is not None else None
+    __slots__ = ()
 
-        return _factory
+    _provided_value: JSON
+
+    @property
+    def _zoom(self) -> Position.JSON:
+        return self._get_key_value(self._get_provided_value, self.Keys.zoom, default=None)
+
+    def _get_pos(self, source: Position.JSON):
+        if source:
+            return source.get(self.Position.Keys.value)
+        return None
 
     @property
     def zoom(self):
-        return MinMaxRange("", self._pos_keyed_factory("zoom"))
+        return model.MinMaxRange(self._get_pos(self._zoom))
+
+    @property
+    def _focus(self) -> Position.JSON:
+        return self._get_key_value(self._get_provided_value, self.Keys.focus, default=None)
 
     @property
     def focus(self):
-        return MinMaxRange("", self._pos_keyed_factory("focus"))
+        return model.MinMaxRange(self._get_pos(self._focus))
 
 
 class GetZoomFocusResponse(RestCommandResponse, ptz.GetZoomFocusResponse):
     """Get Zoom/Focus Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetZoomFocusRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
+
+    class Value(Protocol):
+        """Value"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            ZoomFocus: local_model.ZoomFocus.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            state: Final = "ZoomFocus"
+
+    class Range(Protocol):
+        """Range"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            ZoomFocus: _ZoomFocusRange.JSON
 
     __slots__ = ()
 
-    def _get_sub_value(self, factory: Callable[[], dict] = None):
-        if factory is None:
-            factory = self._get_value
-        return value.get(_ZOOMFOCUS_KEY, None) if (value := factory()) is not None else None
+    _value: Value.JSON
 
     channel_id = GetTatternResponse.channel_id
 
     @property
+    def _state(self):
+        if value := self._value:
+            return value.get(self.Value.Keys.state)
+        return None
+
+    @property
     def state(self):
-        return ZoomFocus(self._get_sub_value())
+        return local_model.ZoomFocus(self._state)
+
+    _initial: Value.JSON
+
+    @property
+    def _initial_state(self):
+        if value := self._initial:
+            return value.get(self.Value.Keys.state)
+        return None
 
     @property
     def inital_state(self):
-        return ZoomFocus(self._get_sub_value(self._get_initial))
+        return local_model.ZoomFocus(self._initial)
+
+    _range: Range.JSON
+
+    @property
+    def _state_range(self):
+        if value := self._range:
+            return value.get(self.Value.Keys.state)
+        return None
 
     @property
     def state_range(self):
-        return _ZoomFocusRange(self._get_sub_value(self._get_range))
+        return _ZoomFocusRange(self._state_range)
 
 
-_DEFAULT_ZOOMOPERATION: Final = typing.ZoomOperation.ZOOM
-_DEFAULT_ZOOMOPERATION_STR: Final = ZOOMOPERATION_STR_MAP[_DEFAULT_ZOOMOPERATION]
+_DefaultZoomOperation: Final = ptz_typing.ZoomOperation.ZOOM
+_DefaultZoomOperationStr: Final = zoom_operation_str(_DefaultZoomOperation)
 
 
 class SetZoomFocusRequest(Request, ptz.SetZoomFocusRequest):
     """Set Zoom or Focus"""
 
+    class Parameter(Protocol):
+        """Parameter"""
+
+        class Operation(Protocol):
+            """Operation"""
+
+            class JSON(TypedDict):
+                """JSON"""
+
+                op: str
+                pos: int
+
+            class Keys(Protocol):
+                """Keys"""
+
+                operation: Final = "op"
+                position: Final = "pos"
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            ZoomFocus: "SetZoomFocusRequest.Parameter.Operation.JSON"
+
+        class Keys(Protocol):
+            """Keys"""
+
+            state: Final = "ZoomFocus"
+
     __slots__ = ()
 
     COMMAND: Final = "StartZoomFocus"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
     def __init__(
         self,
-        operation: typing.ZoomOperation,
-        position: int,
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
@@ -731,60 +1052,94 @@ class SetZoomFocusRequest(Request, ptz.SetZoomFocusRequest):
         self.command = type(self).COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
-        self.operation = operation
-        self.position = position
 
-    def _get_sub_value(self, create=False) -> dict:
-        _key: Final = _ZOOMFOCUS_KEY
-        if (parameter := self._get_parameter(create)) is None:
-            return None
-        if _key in parameter or not create:
-            return parameter.get(_key, None)
-        return parameter.setdefault(_key, {})
+    _parameter: Parameter.JSON
 
-    @property
-    def _sub_value(self):
-        return self._get_sub_value(True)
-
-    channel_id = SetTatternRequest.channel_id
+    def _get_state(self, create=False) -> Parameter.Operation.JSON:
+        return self._get_key_value(
+            self._get_parameter,
+            self.Parameter.Keys.state,
+            create,
+            lambda: dict() if create else None,
+        )
 
     @property
-    def operation(self) -> typing.ZoomOperation:
-        if (value := self._get_sub_value()) is None:
-            return _DEFAULT_ZOOMOPERATION
-        return STR_ZOOMOPERATION_MAP[value.get("op", _DEFAULT_ZOOMOPERATION_STR)]
+    def _state(self):
+        return self._get_state()
+
+    channel_id = SetTatternRequest.channel_id.setter(None)
+
+    @property
+    def operation(self):
+        if value := self._state:
+            return ptz_typing.ZoomOperation(
+                value.get(self.Parameter.Operation.Keys.operation, _DefaultZoomOperationStr)
+            )
+        return _DefaultZoomOperation
 
     @operation.setter
     def operation(self, value):
-        self._sub_value["op"] = ZOOMOPERATION_STR_MAP[value or _DEFAULT_ZOOMOPERATION]
+        self._get_state(True)[self.Parameter.Operation.Keys.operation] = zoom_operation_str(value)
 
     @property
-    def position(self) -> int:
-        if (value := self._get_sub_value()) is None:
-            return 0
-        return value.get("pos", 0)
+    def position(self):
+        if value := self._state:
+            return value.get(self.Parameter.Operation.Keys.position, 0)
+        return 0
 
     @position.setter
     def position(self, value):
-        self._sub_value["pos"] = value
+        self._get_state(True)[self.Parameter.Operation.Keys.position] = int(value)
 
 
-_DEFAULT_OPERATION: Final = typing.Operation.AUTO
-_DEFAULT_OPERATION_STR: Final = OPERATION_STR_MAP[_DEFAULT_OPERATION]
+_DefaultOperation: Final = ptz_typing.Operation.AUTO
+_DefaultOperationStr: Final = operation_str(_DefaultOperation)
 
 
 class SetControlRequest(RequestWithChannel, ptz.SetControlRequest):
     """PTZ Control"""
 
+    class Parameter(Protocol):
+        """Parameter"""
+
+        class Operation(Protocol):
+            """Operation"""
+
+            class JSON(TypedDict):
+                """JSON"""
+
+                op: str
+                id: int
+                speed: int
+
+            class Keys(Protocol):
+                """Keys"""
+
+                operation: Final = "op"
+                preset_id: Final = "id"
+                speed: Final = "speed"
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            Control: "SetControlRequest.Parameter.Operation.JSON"
+
+        class Keys(Protocol):
+            """Keys"""
+
+            state: Final = "Control"
+
     __slots__ = ()
 
     COMMAND: Final = "PtzCtrl"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
     def __init__(
         self,
-        operation: typing.Operation,
-        preset_id: int = None,
-        speed: int = None,
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
@@ -792,44 +1147,51 @@ class SetControlRequest(RequestWithChannel, ptz.SetControlRequest):
         self.command = type(self).COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
-        self.operation = operation
-        self.preset_id = preset_id
-        self.speed = speed
+
+    _parameter: Parameter.JSON
+
+    def _get_state(self, create=False) -> Parameter.Operation.JSON:
+        return self._get_key_value(
+            self._get_parameter,
+            self.Parameter.Keys.state,
+            create,
+            lambda: dict() if create else None,
+        )
+
+    @property
+    def _state(self):
+        return self._get_state()
+
+    channel_id = SetTatternRequest.channel_id.setter(None)
 
     @property
     def operation(self):
-        if (value := self._get_parameter()) is None:
-            return _DEFAULT_OPERATION
-        return STR_OPERATION_MAP[value.get("op", _DEFAULT_OPERATION_STR)]
+        if value := self._state:
+            return ptz_typing.Operation(
+                value.get(self.Parameter.Operation.Keys.operation, _DefaultOperationStr)
+            )
+        return _DefaultOperation
 
     @operation.setter
     def operation(self, value):
-        self._parameter["op"] = OPERATION_STR_MAP[value or _DEFAULT_OPERATION]
+        self._get_state(True)[self.Parameter.Operation.Keys.operation] = operation_str(value)
 
     @property
-    def preset_id(self) -> int | None:
-        if (value := self._get_parameter()) is None:
-            return None
-        return value.get("id", None)
-
-    @preset_id.setter
-    def preset_id(self, value):
-        if value is None:
-            if (_value := self._get_parameter()) is not None:
-                del _value["id"]
-            return
-        self._parameter["id"] = value
-
-    @property
-    def speed(self) -> int | None:
-        if (value := self._get_parameter()) is None:
-            return None
-        return value.get("speed", None)
+    def speed(self):
+        if value := self._state:
+            return value.get(self.Parameter.Operation.Keys.speed, 0)
+        return 0
 
     @speed.setter
     def speed(self, value):
-        if value is None:
-            if (_value := self._get_parameter()) is not None:
-                del _value["speed"]
-            return
-        self._parameter["speed"] = value
+        self._get_state(True)[self.Parameter.Operation.Keys.speed] = int(value)
+
+    @property
+    def preset_id(self):
+        if value := self._state:
+            return value.get(self.Parameter.Operation.Keys.preset_id, 0)
+        return 0
+
+    @preset_id.setter
+    def preset_id(self, value):
+        self._get_state(True)[self.Parameter.Operation.Keys.preset_id] = int(value)

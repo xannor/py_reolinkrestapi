@@ -1,67 +1,79 @@
 """REST Record Models"""
 
 from datetime import date
-from typing import Callable, Final, Iterable, overload
+from typing import Callable, Final, Iterable, Protocol, TypedDict
+from typing_extensions import Unpack
 from async_reolink.api.typing import StreamTypes
-from async_reolink.api.record import typing
+from async_reolink.api.record import typing as record_typing
 
-from ..typing import STR_STREAMTYPES_MAP, STREAMTYPES_STR_MAP, FactoryValue
+from ...rest.typing import stream_type_str
+
+from .._utilities import providers
+
 from .. import model
 
 # pylint: disable=missing-function-docstring
 
-_DEFAULT_STREAMTYPE: Final = StreamTypes.MAIN
-_DEFAULT_STREAMTYPE_STR = STREAMTYPES_STR_MAP[_DEFAULT_STREAMTYPE]
+_DefaultStreamType: Final = StreamTypes.MAIN
+_DefaultStreamTypeStr: Final = stream_type_str(_DefaultStreamType)
 
 
-class Search(typing.Search):
+class Search(providers.DictProvider[str, any], record_typing.Search):
     """REST Search"""
 
-    __slots__ = ("_factory",)
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+        onlyStatus: int
+        streamType: str
+        StartTime: model.DateTime.JSON
+        EndTime: model.DateTime.JSON
+
+    class Keys(Protocol):
+        """Keys"""
+
+        status_only: Final = "onlyStatus"
+        stream_type: Final = "streamType"
+        start: Final = "StartTime"
+        end: Final = "EndTime"
+
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
     def status_only(self):
-        if (value := self._factory()) is None:
-            return False
-        return bool(value.get("onlyStatus", 0))
+        return (
+            True if (value := self._provided_value) and value.get(self.Keys.status_only) else False
+        )
 
     @property
-    def stream_type(self):
-        if (value := self._factory()) is None:
-            return _DEFAULT_STREAMTYPE
-        return STR_STREAMTYPES_MAP[value.get("streamType", _DEFAULT_STREAMTYPE_STR)]
+    def stream_type(self, value: StreamTypes, _: bool):
+        if value := self._provided_value:
+            return StreamTypes(value.get(self.Keys.stream_type, _DefaultStreamTypeStr))
+        return _DefaultStreamType
 
-    def _get_start(self) -> dict:
-        if (value := self._factory()) is None:
-            return None
-        return value.get("StartTime", None)
+    def _get_start(self, create=False) -> model.DateTime.JSON:
+        return self._get_key_value(self._get_provided_value, self.Keys.start, default=None)
+
+    @property
+    def _start(self):
+        return self._get_start()
 
     @property
     def start(self):
         return model.DateTime(self._get_start)
 
-    def _get_end(self) -> dict:
-        if (value := self._factory()) is None:
-            return None
-        return value.get("EndTime", None)
+    def _get_end(self, create=False) -> model.DateTime.JSON:
+        return self._get_key_value(self._get_provided_value, self.Keys.end, default=None)
+
+    @property
+    def _end(self):
+        return self._get_end()
 
     @property
     def end(self):
         return model.DateTime(self._get_end)
-
-    def _copy(self):
-        if not (_d := self._factory()):
-            return None
-        _d = _d.copy()
-        if _t := self.start._copy():
-            _t["StartTime"] = _t
-        if _t := self.end._copy():
-            _t["EndTime"] = _t
-
-        return _d
 
 
 class MutableSearch(Search):
@@ -69,67 +81,60 @@ class MutableSearch(Search):
 
     __slots__ = ()
 
-    def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        if factory is None:
-            _d: dict = None
-
-            def _factory(create=False):
-                if _d is None and create:
-                    _d = {}
-                return _d
-
-            factory = _factory
-        super().__init__(factory)
-        self._factory = factory
-
-    @property
-    def _value(self):
-        return self._factory(True)
+    def _get_provided_value(self, create=False):
+        if (value := super()._get_provided_value(create)) or not create:
+            return value
+        value = {}
+        self._set_provided_value(value)
+        return value
 
     @Search.status_only.setter
     def status_only(self, value):
-        self._value["onlyStatus"] = int(bool(value))
+        self._set_provided_value(True)[self.Keys.status_only] = int(value)
 
     @Search.stream_type.setter
     def stream_type(self, value):
-        self._value["streamType"] = STREAMTYPES_STR_MAP[value or _DEFAULT_STREAMTYPE]
+        self._set_provided_value(True)[self.Keys.stream_type] = stream_type_str(value)
 
-    def _get_start(self, create=False) -> dict:
-        _key: Final = "StartTime"
-        if (value := self._factory(create)) is None:
-            return None
-        if _key in value or not create:
-            return value.get(_key, None)
-        return value.setdefault(_key, {})
+    def _get_start(self, create=False) -> model.DateTime.JSON:
+        return self._get_key_value(
+            self._get_provided_value,
+            self.Keys.start,
+            create,
+            default=lambda: dict() if create else None,
+        )
 
     @property
     def start(self):
         return model.MutableDateTime(self._get_start)
 
     @start.setter
-    def start(self, value: typing.DateTime):
+    def start(self, value: record_typing.DateTime):
         self.start.update(value)
 
-    def _get_end(self, create=False) -> dict:
-        _key: Final = "EndTime"
-        if (value := self._factory(create)) is None:
-            return None
-        if _key in value or not create:
-            return value.get(_key, None)
-        return value.setdefault(_key, {})
+    def _get_end(self, create=False) -> model.DateTime.JSON:
+        return self._get_key_value(
+            self._get_provided_value,
+            self.Keys.end,
+            create,
+            default=lambda: dict() if create else None,
+        )
 
     @property
     def end(self):
         return model.MutableDateTime(self._get_end)
 
     @end.setter
-    def end(self, value: typing.DateTime):
+    def end(self, value: record_typing.DateTime):
         self.end.update(value)
 
-    def update(self, value: typing.Search):
+    def _update(self, **kwargs: Unpack[Search.JSON]):
+        self._get_provided_value(True).update(kwargs)
+
+    def update(self, value: record_typing.Search):
         if isinstance(value, Search):
-            if (_d := value._copy()) and (_u := self._factory(True)):
-                _u.update(_d)
+            if _d := value._provided_value:
+                self._update(_d)
             return
         try:
             self.status_only = value.status_only
@@ -149,111 +154,149 @@ class MutableSearch(Search):
             pass
 
 
-class File(typing.File):
+class File(providers.DictProvider[str, any], record_typing.File):
     """REST Recording File"""
 
-    __slots__ = ("_factory",)
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+        frameRate: int
+        width: int
+        height: int
+        name: str
+        size: int
+        type: str
+        start: model.DateTime.JSON
+        end: model.DateTime.JSON
 
-    def _get_start(self) -> dict:
-        if (value := self._factory()) is None:
-            return None
-        return value.get("StartTime", None)
+    class Keys(Protocol):
+        """Keys"""
 
-    @property
-    def frame_rate(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("frameRate", 0)
+        frame_rate: Final = "frameRate"
+        width: Final = "width"
+        height: Final = "height"
+        name: Final = "name"
+        size: Final = "size"
+        type: Final = "type"
+        start: Final = Search.Keys.start
+        end: Final = Search.Keys.end
 
-    @property
-    def width(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("width", 0)
+    __slots__ = ()
 
-    @property
-    def height(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("height", 0)
-
-    @property
-    def size(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("size", 0)
+    _provided_value: JSON
 
     @property
-    def name(self) -> str:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("name", 0)
+    def frame_rate(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.frame_rate, 0)
+        return 0
 
     @property
-    def type(self) -> str:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("type", 0)
+    def width(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.width, 0)
+        return 0
+
+    @property
+    def height(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.height, 0)
+        return 0
+
+    @property
+    def size(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.size, 0)
+        return 0
+
+    @property
+    def name(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.name, "")
+        return ""
+
+    @property
+    def type(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.type, "")
+        return ""
+
+    def _get_start(self, create=False) -> model.DateTime.JSON:
+        return self._get_key_value(self._get_provided_value, self.Keys.start, default=None)
+
+    @property
+    def _start(self):
+        return self._get_start()
 
     @property
     def start(self):
         return model.DateTime(self._get_start)
 
-    def _get_end(self) -> dict:
-        if (value := self._factory()) is None:
-            return None
-        return value.get("EndTime", None)
+    def _get_end(self, create=False) -> model.DateTime.JSON:
+        return self._get_key_value(self._get_provided_value, self.Keys.end, default=None)
+
+    @property
+    def _end(self):
+        return self._get_end()
 
     @property
     def end(self):
         return model.DateTime(self._get_end)
 
 
-class _SearchStatusTable(Iterable[int]):
-    __slots__ = ("_factory",)
-
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+class _SearchStatusTable(providers.ValueProvider[str], Iterable[int]):
+    __slots__ = ()
 
     def __iter__(self):
-        if (value := self._factory()) is None:
+        if (value := self._provided_value) is None:
             return
-        for i, _c in enumerate(str(value), 1):
+        for i, _c in enumerate(value, 1):
             if _c == "1":
                 yield i
 
 
-class SearchStatus(typing.SearchStatus):
+class SearchStatus(providers.DictProvider[str, any], record_typing.SearchStatus):
     """REST Recodring Search Status"""
 
-    __slots__ = ("_factory",)
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+        year: int
+        mon: int
+        table: str
+
+    class Keys(Protocol):
+        """Keys"""
+
+        year: Final = "year"
+        month: Final = "mon"
+        table: Final = "table"
+
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
-    def year(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("year", 0)
+    def year(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.year, 0)
+        return 0
 
     @property
-    def month(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("mon", 0)
+    def month(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.month, 0)
+        return 0
 
-    def _get_table(self) -> str:
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("table", "")
+    @property
+    def _table(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.table, "")
+        return ""
 
     @property
     def days(self):
-        return _SearchStatusTable(self._get_table)
+        return _SearchStatusTable(lambda _: self._table)
 
     def __iter__(self):
         year = self.year

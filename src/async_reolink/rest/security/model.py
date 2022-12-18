@@ -5,146 +5,205 @@
 # pylint:disable=missing-function-docstring
 
 from dataclasses import dataclass
-from typing import Callable, Final
+from typing import Callable, Final, Protocol, TypedDict
 
-from async_reolink.api.security import typing
-from .typing import _LEVELTYPE_STR_MAP, _STR_LEVELTYPE_MAP
+from async_reolink.api.security import typing as secuirty_typing
+from ..security.typing import level_type_str
+
+from .._utilities import providers
 
 
 @dataclass(frozen=True)
-class AuthenticationId(typing.AuthenticationId):
+class AuthenticationId(secuirty_typing.AuthenticationId):
     """Authentication Id"""
 
     weak: int = 0
     strong: int = 0
 
 
-class LoginToken:
+class LoginToken(providers.DictProvider[str, any]):
     """Login Token"""
 
-    __slots__ = ("_factory",)
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        super().__init__()
-        self._factory = factory
+        leaseTime: int
+        name: str
+
+    class Keys(Protocol):
+        """Keys"""
+
+        lease_time: Final = "leaseTime"
+        name: Final = "name"
+
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
-    def lease_time(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("leaseTime", 0)
+    def lease_time(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.lease_time, 0)
+        return 0
 
     @property
-    def name(self) -> str:
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("name", "")
+    def name(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.name, "")
+        return ""
 
 
 class LoginTokenV2(LoginToken):
     """Login Token V2"""
 
+    class JSON(LoginToken.JSON):
+        """JSON"""
+
+        checkBasic: int
+        countTotal: int
+
+    class Keys(LoginToken.Keys):
+        """Keys"""
+
+        check: Final = "checkBasic"
+        count: Final = "countTotal"
+
     __slots__ = ()
 
+    _provided_value: JSON
+
     @property
-    def check(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("checkBasic", 0)
+    def check(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.check, 0)
+        return 0
 
     @property
     def count(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("countTotal", 0)
+        if value := self._provided_value:
+            return value.get(self.Keys.count, 0)
+        return 0
 
 
-class DigestInfo:
+class DigestInfo(providers.DictProvider[str, any]):
     """Digest Info"""
 
-    __slots__ = ("_factory",)
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        super().__init__()
-        self._factory = factory
+        Cnonce: str
+        Method: str
+        Nc: str
+        Nonce: str
+        Qop: str
+        Realm: str
+        Response: str
+        Uri: str
+        UserName: str
+
+    class Keys(Protocol):
+        """Keys"""
+
+        cnonce: Final = "Cnonce"
+        method: Final = "Method"
+        nc: Final = "Nc"
+        nonce: Final = "Nonce"
+        qop: Final = "Qop"
+        realm: Final = "Realm"
+        response: Final = "Response"
+        uri: Final = "Uri"
+        user_name: Final = "UserName"
+
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
     def cnonce(self):
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("Cnonce", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.cnonce, "")
+        return ""
 
     @property
     def method(self):
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("Method", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.method, "")
+        return ""
 
     @property
     def nc(self):  # pylint: disable=invalid-name
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("Nc", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.nc, "")
+        return ""
 
     @property
     def nonce(self):
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("Nonce", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.nonce, "")
+        return ""
 
     @property
     def qop(self):
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("Qop", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.qop, "")
+        return ""
 
     @property
     def realm(self):
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("Realm", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.realm, "")
+        return ""
 
     @property
     def response(self):
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("Response", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.response, "")
+        return ""
 
     @property
     def uri(self):
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("Uri", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.uri, "")
+        return ""
 
     @property
     def user_name(self):
-        if (value := self._factory()) is None:
-            return ""
-        return value.get("UserName", "")
+        if value := self._provided_value:
+            return value.get(self.Keys.user_name, "")
+        return ""
 
 
-_DEFAULT_LEVELTYPE: Final = typing.LevelTypes.GUEST
-_DEFUALT_LEVELTYPE_STR: Final = _LEVELTYPE_STR_MAP[_DEFAULT_LEVELTYPE]
+_DefaultLevelType = secuirty_typing.LevelTypes.GUEST
+_DefaultLevelTypeStr = level_type_str(_DefaultLevelType)
 
 
-class UserInfo(typing.UserInfo):
+class UserInfo(providers.DictProvider[str, any], secuirty_typing.UserInfo):
     """REST User Record"""
 
-    __slots__ = ("_factory",)
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+        userName: str
+        level: str
+
+    class Keys(Protocol):
+        """Keys"""
+
+        user_name: Final = "userName"
+        level: Final = "level"
+
+    __slots__ = ()
+
+    _provided_value: JSON
 
     @property
     def user_name(self) -> str:
-        if (value := self._factory()) is None:
-            return None
-        return value.get("userName", None)
+        if value := self._provided_value:
+            return value.get(self.Keys.user_name, "")
+        return ""
 
     @property
     def level(self):
-        if (value := self._factory()) is None:
-            return _DEFAULT_LEVELTYPE
-        return _STR_LEVELTYPE_MAP.get(
-            value.get("level", _DEFUALT_LEVELTYPE_STR), _DEFAULT_LEVELTYPE
-        )
+        if value := self._provided_value:
+            return secuirty_typing.LevelTypes(value.get(self.Keys.level, _DefaultLevelTypeStr))
+        return _DefaultLevelType

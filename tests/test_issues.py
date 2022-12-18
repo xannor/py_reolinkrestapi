@@ -8,12 +8,14 @@ from typing import Final
 from async_reolink.api.network.typing import LinkTypes
 from async_reolink.api.connection.model import Request
 from async_reolink.rest.connection.model import Response as RestCommandResponse
-from async_reolink.api.system import mixin as system
-from async_reolink.api.ptz import mixin as ptz
-from async_reolink.api.ai import mixin as ai
-from async_reolink.api.alarm import mixin as alarm
+from async_reolink.rest.system import mixin as system
+from async_reolink.rest.ptz import mixin as ptz
+from async_reolink.rest.ai import mixin as ai
+from async_reolink.rest.alarm import mixin as alarm
 from async_reolink.rest.network import mixin as network
 from .models import MockConnection
+
+from async_reolink.api.system import capabilities
 
 _JSON: Final = MappingProxyType(
     {
@@ -39,7 +41,7 @@ class TestRig(MockConnection, system.System, network.Network, ptz.PTZ, ai.AI):
 
         async def _mock_iterable():
             for response in json:
-                yield RestCommandResponse.create_from(response)
+                yield RestCommandResponse.from_response(response)
 
         return _mock_iterable()
 
@@ -56,7 +58,7 @@ async def test_int5():
             continue
         elif isinstance(response, system.system.GetDeviceInfoResponse):
             continue
-        elif isinstance(response, mixin.commands.network.GetNetworkPortsResponse):
+        elif isinstance(response, network.command.GetNetworkPortsResponse):
             continue
         elif isinstance(response, alarm.alarm.GetMotionStateResponse):
             continue
@@ -64,9 +66,9 @@ async def test_int5():
             continue
         elif isinstance(response, ai.ai.GetAiStateResponse):
             continue
-        elif isinstance(response, ptz.commands.GetAutoFocusResponse):
+        elif isinstance(response, ptz.ptz.GetAutoFocusResponse):
             continue
-        elif isinstance(response, ptz.commands.GetZoomFocusResponse):
+        elif isinstance(response, ptz.ptz.GetZoomFocusResponse):
             continue
         elif isinstance(response, ai.ai.GetAiStateResponse):
             continue
@@ -87,8 +89,7 @@ async def test_int9():
             assert ability.auth
             assert (
                 ability.auth.permissions
-                == system.system.capabilities.Permissions.READ
-                | system.system.capabilities.Permissions.WRITE
+                == capabilities.Permissions.READ | capabilities.Permissions.WRITE
             )
             continue
         elif isinstance(response, system.system.GetTimeResponse):
@@ -98,15 +99,15 @@ async def test_int9():
             info = response.info
             assert info.name == "Frente"
             continue
-        elif isinstance(response, mixin.commands.network.GetNetworkPortsResponse):
+        elif isinstance(response, network.command.GetNetworkPortsResponse):
             ports = response.ports
             assert ports.http.enabled
             continue
-        elif isinstance(response, mixin.commands.network.GetLocalLinkResponse):
+        elif isinstance(response, network.command.GetLocalLinkResponse):
             local_link = response.local_link
             assert local_link.type == LinkTypes.DHCP
             continue
-        elif isinstance(response, mixin.commands.network.GetP2PResponse):
+        elif isinstance(response, network.command.GetP2PResponse):
             info = response.info
             assert info.uid
             continue
@@ -125,15 +126,15 @@ async def test_int9():
             state = response.state
             assert state
             continue
-        elif isinstance(response, ptz.commands.GetAutoFocusResponse):
+        elif isinstance(response, ptz.ptz.GetAutoFocusResponse):
             assert response.disabled is not None
             continue
-        elif isinstance(response, ptz.commands.GetZoomFocusResponse):
+        elif isinstance(response, ptz.ptz.GetZoomFocusResponse):
             state = response.state
             assert state.focus is not None
             assert state.zoom is not None
             continue
-        elif isinstance(response, ptz.commands.GetPatrolResponse):
+        elif isinstance(response, ptz.ptz.GetPatrolResponse):
             assert response.channel_id is not None
             patrols = response.patrols
             assert patrols is not None
@@ -162,8 +163,7 @@ async def test_int24():
             assert ability.auth
             assert (
                 ability.auth.permissions
-                == system.system.capabilities.Permissions.READ
-                | system.system.capabilities.Permissions.WRITE
+                == capabilities.Permissions.READ | capabilities.Permissions.WRITE
             )
             continue
         elif isinstance(response, system.system.GetTimeResponse):
@@ -173,15 +173,15 @@ async def test_int24():
             info = response.info
             assert info.name == "Living Room"
             continue
-        elif isinstance(response, mixin.commands.network.GetNetworkPortsResponse):
+        elif isinstance(response, network.command.GetNetworkPortsResponse):
             ports = response.ports
             assert ports.http.enabled
             continue
-        elif isinstance(response, mixin.commands.network.GetLocalLinkResponse):
+        elif isinstance(response, network.command.GetLocalLinkResponse):
             local_link = response.local_link
             assert local_link.type == LinkTypes.DHCP
             continue
-        elif isinstance(response, mixin.commands.network.GetP2PResponse):
+        elif isinstance(response, network.command.GetP2PResponse):
             info = response.info
             assert info.uid
             continue
@@ -200,15 +200,15 @@ async def test_int24():
             state = response.state
             assert state
             continue
-        elif isinstance(response, ptz.commands.GetAutoFocusResponse):
+        elif isinstance(response, ptz.ptz.GetAutoFocusResponse):
             assert response.disabled is not None
             continue
-        elif isinstance(response, ptz.commands.GetZoomFocusResponse):
+        elif isinstance(response, ptz.ptz.GetZoomFocusResponse):
             state = response.state
             assert state.focus is not None
             assert state.zoom is not None
             continue
-        elif isinstance(response, ptz.commands.GetPatrolResponse):
+        elif isinstance(response, ptz.ptz.GetPatrolResponse):
             assert response.channel_id is not None
             patrols = response.patrols
             assert patrols is not None
@@ -220,7 +220,7 @@ async def test_int24():
             assert presets is not None
             assert len(presets) == 0
             continue
-        elif isinstance(response, ptz.commands.GetPresetResponse):
+        elif isinstance(response, ptz.ptz.GetPresetResponse):
             assert response.channel_id is not None
             presets = response.presets
             assert presets is not None
@@ -230,7 +230,6 @@ async def test_int24():
             assert len(presets) == _range.id.max
             preset = presets[1]
             assert preset is not None
-            assert preset.channel_id == response.channel_id
             assert preset.name == "pos1"
             continue
         else:

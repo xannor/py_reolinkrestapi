@@ -1,11 +1,11 @@
 """System REST Commands"""
 
-from typing import Final
+from typing import Final, Protocol, TypedDict
 from async_reolink.api.system import command as system
 
 from .._utilities.dictlist import DictList
 
-from .model import DaylightSavingsTimeInfo, DeviceInfo, TimeInfo, StorageInfo
+from .model import UserInfo, DaylightSavingsTimeInfo, DeviceInfo, TimeInfo, StorageInfo
 
 from ..connection.model import (
     Request,
@@ -22,65 +22,122 @@ from .capabilities import Capabilities
 class GetAbilitiesRequest(Request, system.GetAbilitiesRequest):
     """REST Get Capabilities Request"""
 
+    class Parameter(Protocol):
+        """Parameter"""
+
+        class User(Protocol):
+            class JSON(UserInfo.JSON):
+                """JSON"""
+
+            class Keys(UserInfo.Keys, Protocol):
+                """Keys"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            User: "GetAbilitiesRequest.Parameter.User.JSON"
+
+        class Keys(Protocol):
+            """Keys"""
+
+            user: Final = "User"
+
     __slots__ = ()
 
     COMMAND: Final = "GetAbility"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    _NO_USER: Final = "NULL"
+    _NO_USER_ID: Final = hash(_NO_USER)
 
     def __init__(
         self,
-        username: str | None,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ) -> None:
         super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.user_name = username or "NULL"
+        self.command = self.COMMAND
+        self.response_type = ResponseTypes.VALUE_ONLY
+        self._id = self._COMMAND_ID ^ self._NO_USER_ID
 
-    def _get_user(self, create=False) -> dict:
-        _key: Final = "User"
-        if (parameter := self._get_parameter(create)) is None:
-            return None
-        if _key in parameter or not create:
-            return parameter.get(_key, None)
-        return parameter.setdefault(_key, {})
-
-    @property
-    def _user(self) -> dict:
-        return self._get_user(True)
+    def _get_user(self, create=False) -> Parameter.User.JSON:
+        return self._get_key_value(
+            self._get_parameter,
+            self.Parameter.Keys.user,
+            create,
+            default=lambda: dict() if create else None,
+        )
 
     @property
-    def user_name(self) -> str:
-        return value.get("userName", "") if (value := self._get_user()) is not None else ""
+    def _user(self):
+        return self._get_user()
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def user_name(self):
+        if value := self._user:
+            return value.get(self.Parameter.User.Keys.user_name, "")
+        return ""
 
     @user_name.setter
     def user_name(self, value):
-        self._user["userName"] = value
+        if value == self._NO_USER_ID:
+            value = None
+        self._get_user(True)[self.Parameter.User.Keys.user_name] = (
+            str(value) if value else self._NO_USER
+        )
+        self._id = self._COMMAND_ID ^ (self._NO_USER_ID if not value else hash(value))
 
 
 class GetAbilitiesResponse(RestResponse, system.GetAbilitiesResponse):
     """REST Get Capability Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs: any):
         if super().is_response(response, GetAbilitiesRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return GetAbilitiesResponse(
+                response, request_id=request.id if request else None, **kwargs
+            )
         return None
+
+    class Value(Protocol):
+        """Value"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            Ability: dict
+
+        class Keys(Protocol):
+            """Keys"""
+
+            capabilities: Final = "Ability"
 
     __slots__ = ()
 
-    def _get_ability(self) -> dict:
-        return value.get("Ability", None) if (value := self._get_value()) is not None else None
+    _value: Value.JSON
+
+    @property
+    def _capabilities(self):
+        if value := self._value:
+            return value.get(self.Value.Keys.capabilities)
+        return None
 
     @property
     def capabilities(self):
-        # we are not passing the factory here since this object is meant to be updatable
-        return Capabilities(self._get_ability())
+        return Capabilities(self._capabilities)
 
 
 class GetDeviceInfoRequest(Request, system.GetDeviceInfoRequest):
     """REST Get Device Info Request"""
 
     COMMAND: Final = "GetDevInfo"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
@@ -92,27 +149,48 @@ class GetDeviceInfoResponse(RestResponse, system.GetDeviceInfoResponse):
     """REST Get Device Info Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetDeviceInfoRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
+
+    class Value(Protocol):
+        """Value"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            DevInfo: DeviceInfo.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            info: Final = "DevInfo"
 
     __slots__ = ()
 
-    def _get_info(self) -> dict:
-        return value.get("DevInfo", None) if (value := self._get_value()) is not None else None
+    _value: Value.JSON
+
+    @property
+    def _info(self):
+        if value := self._value:
+            return value.get(self.Value.Keys.info)
+        return None
 
     @property
     def info(self):
-        """device info"""
-        # we are not passing the factory here since this object is meant to be updatable
-        return DeviceInfo(self._get_info())
+        return DeviceInfo(self._info)
 
 
 class GetTimeRequest(Request, system.GetTimeRequest):
     """REST Get Time Request"""
 
     COMMAND: Final = "GetTime"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
@@ -124,26 +202,49 @@ class GetTimeResponse(RestResponse, system.GetTimeResponse):
     """REST Get Time Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetTimeRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
+
+    class Value(Protocol):
+        """Value"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            Dst: DaylightSavingsTimeInfo.JSON
+            Time: TimeInfo.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            dst: Final = "Dst"
+            time: Final = "Time"
 
     __slots__ = ()
 
-    def _get_dst(self) -> dict:
-        return value.get("Dst", None) if (value := self._get_value()) is not None else None
+    _value: Value.JSON
+
+    @property
+    def _dst(self):
+        if value := self._value:
+            return value.get(self.Value.Keys.dst)
+        return None
 
     @property
     def dst(self):
-        return DaylightSavingsTimeInfo(self._get_dst)
+        return DaylightSavingsTimeInfo(self._dst)
 
-    def _get_time(self) -> dict:
-        return value.get("Time", None) if (value := self._get_value()) is not None else None
+    @property
+    def _time(self):
+        if value := self._value:
+            return value.get(self.Value.Keys.time)
+        return None
 
     @property
     def time(self):
-        return TimeInfo(self._get_time)
+        return TimeInfo(self._time)
 
 
 class RebootRequest(Request, system.RebootRequest):
@@ -152,6 +253,11 @@ class RebootRequest(Request, system.RebootRequest):
     __slots__ = ()
 
     COMMAND: Final = "Reboot"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
@@ -165,6 +271,11 @@ class GetHddInfoRequest(Request, system.GetHddInfoRequest):
     __slots__ = ()
 
     COMMAND: Final = "GetHddInfo"
+    _COMMAND_ID: Final = hash(COMMAND)
+
+    @property
+    def id(self):
+        return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
@@ -176,16 +287,32 @@ class GetHddInfoResponse(RestResponse, system.GetHddInfoResponse):
     """REST Get HDD Info Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetHddInfoRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
+
+    class Value(Protocol):
+        """Value"""
+
+        class JSON(TypedDict):
+            """JSON"""
+
+            HddInfo: list[StorageInfo.JSON]
+
+        class Keys(Protocol):
+            """Keys"""
+
+            info: Final = "HddInfo"
 
     __slots__ = ()
 
-    def _get_info(self) -> list:
-        return value.get("HddInfo", None) if (value := self._get_value()) is not None else None
+    _value: Value.JSON
 
     @property
-    def info(self):
-        return DictList("number", self._get_info(), StorageInfo)
+    def _info(self) -> list[StorageInfo.JSON]:
+        return self._get_key_value(self._get_value, self.Value.Keys.info, default=None)
+
+    @property
+    def info(self) -> DictList[int, StorageInfo]:
+        return DictList(StorageInfo.Keys.id, self._info, StorageInfo)

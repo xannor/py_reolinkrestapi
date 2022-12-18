@@ -1,40 +1,81 @@
 """REST PTZ Typings"""
 
 from types import MappingProxyType
-from typing import Final
+from typing import Final, ValuesView, overload
 from async_reolink.api.ptz.typing import ZoomOperation, Operation
 
-STR_OPERATION_MAP: Final = MappingProxyType(
+_OPERATION_MAP: Final = MappingProxyType(
     {
-        "Stop": Operation.STOP,
-        "Left": Operation.LEFT,
-        "Right": Operation.RIGHT,
-        "Up": Operation.UP,
-        "LeftUp": Operation.LEFT_UP,
-        "LeftDown": Operation.LEFT_DOWN,
-        "RightUp": Operation.RIGHT_UP,
-        "RightDown": Operation.RIGHT_DOWN,
-        "IrisDec": Operation.IRIS_SHRINK,
-        "IrisInc": Operation.IRIS_ENLARGE,
-        "ZoomDec": Operation.ZOOM_OUT,
-        "ZoomInc": Operation.ZOOM_IN,
-        "FocusInc": Operation.FOCUS_BACK,
-        "FocusDec": Operation.FOCUS_FORWARD,
-        "Auto": Operation.AUTO,
-        "StartPatrol": Operation.PATROL_START,
-        "StopPatrol": Operation.PATROL_STOP,
-        "ToPos": Operation.TO_PRESET,
+        Operation.STOP: "Stop",
+        Operation.LEFT: "Left",
+        Operation.RIGHT: "Right",
+        Operation.UP: "Up",
+        Operation.LEFT_UP: "LeftUp",
+        Operation.LEFT_DOWN: "LeftDown",
+        Operation.RIGHT_UP: "RightUp",
+        Operation.RIGHT_DOWN: "RightDown",
+        Operation.IRIS_SHRINK: "IrisDec",
+        Operation.IRIS_ENLARGE: "IrisInc",
+        Operation.ZOOM_OUT: "ZoomDec",
+        Operation.ZOOM_IN: "ZoomInc",
+        Operation.FOCUS_BACK: "FocusInc",
+        Operation.FOCUS_FORWARD: "FocusDec",
+        Operation.AUTO: "Auto",
+        Operation.PATROL_START: "StartPatrol",
+        Operation.PATROL_STOP: "StopPatrol",
+        Operation.TO_PRESET: "ToPos",
     }
 )
 
-OPERATION_STR_MAP: Final = MappingProxyType(
-    {_v: _k for _k, _v in STR_OPERATION_MAP.items()}
+for _k, _v in _OPERATION_MAP.items():
+    Operation._value2member_map_[_v] = _k
+
+
+class _Missing:
+    pass
+
+
+_MISSING: Final = _Missing()
+
+
+@overload
+def operation_str() -> ValuesView[str]:
+    ...
+
+
+@overload
+def operation_str(value: Operation) -> str:
+    ...
+
+
+def operation_str(value: Operation = _Missing):
+    if value is _MISSING:
+        return _OPERATION_MAP.values()
+    return _OPERATION_MAP.get(value)
+
+
+_ZOOMOPERATION_MAP: Final = MappingProxyType(
+    {
+        ZoomOperation.ZOOM: "ZoomPos",
+        ZoomOperation.FOCUS: "FocusPos",
+    }
 )
 
-STR_ZOOMOPERATION_MAP: Final = MappingProxyType(
-    {"ZoomPos": ZoomOperation.ZOOM, "FocusPos": ZoomOperation.FOCUS}
-)
+for _k, _v in _ZOOMOPERATION_MAP.items():
+    ZoomOperation._value2member_map_[_v] = _k
 
-ZOOMOPERATION_STR_MAP: Final = MappingProxyType(
-    {_v: _k for _k, _v in STR_ZOOMOPERATION_MAP.items()}
-)
+
+@overload
+def zoom_operation_str() -> ValuesView[str]:
+    ...
+
+
+@overload
+def zoom_operation_str(value: ZoomOperation) -> str:
+    ...
+
+
+def zoom_operation_str(value: ZoomOperation):
+    if value is _MISSING:
+        return _ZOOMOPERATION_MAP.values()
+    return _ZOOMOPERATION_MAP.get(value)

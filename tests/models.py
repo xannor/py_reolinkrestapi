@@ -7,6 +7,8 @@ from typing import AsyncIterable, TypedDict
 from async_reolink.api.connection.mixin import Connection
 from async_reolink.api.connection.model import Request, Response
 
+from async_reolink.rest.connection.model import ResponseWithCode
+
 
 class MockConnectionValues(TypedDict):
 
@@ -51,6 +53,12 @@ class MockConnection(Connection, ABC):
         if self._logger is not None:
             self._logger.info("disconnect fired")
         return
+
+    def _has_response_code(self, response: Response):
+        return isinstance(response, ResponseWithCode)
+
+    def _is_success_response(self, response: Response):
+        return isinstance(response, ResponseWithCode)
 
 
 class MockConnection_SingleExecute(MockConnection, ABC):

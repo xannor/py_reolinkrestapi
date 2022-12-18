@@ -5,7 +5,7 @@ from typing import Sequence
 from async_reolink.api.connection.model import Request
 from async_reolink.api.record.mixin import Record as BaseRecord
 from async_reolink.api.record import typing
-from ..connection.model import _COMMAND_KEY, Response
+from ..connection.model import Response, RequestWithChannel
 from . import command
 
 from .seed import Seed
@@ -24,7 +24,7 @@ class Record(BaseRecord, WithConnection):
         _command = commands[0]
         if len(commands) > 1 or not isinstance(_command, command.GetSnapshotRequest):
             return
-        query[_COMMAND_KEY] = _command.command
+        query[RequestWithChannel.command.key] = _command.command
         query.update(_command.raw_parameter)
         query["rs"] = str(Seed())
         return True

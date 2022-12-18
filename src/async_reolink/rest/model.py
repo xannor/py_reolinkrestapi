@@ -1,97 +1,142 @@
 """General Models"""
 
-from typing import Callable, Final, Generic, TypeVar, overload
+from typing import (
+    Callable,
+    Final,
+    Generic,
+    Iterable,
+    Protocol,
+    TypeVar,
+    TypedDict,
+    overload,
+)
+from typing_extensions import LiteralString, Unpack
+
 
 from async_reolink.api import model, typing
 
-from .typing import FactoryValue
-
-T = TypeVar("T")
+from ._utilities import providers
 
 
-class _Factory:
-
-    __slots__ = ("_factory",)
-
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+_LS = TypeVar("_LS", bound=LiteralString)
 
 
-class SimpleTime(_Factory, model.SimpleTime):
+class _ManglesKeys:
+
+    # __slots__ = ("__prefix", "__suffix")
+
+    def __init__(self, prefix: str = None, suffix: str = None, title=False) -> None:
+        super().__init__()
+        self.__prefix = prefix
+        self.__suffix = suffix
+        self.__title = title
+
+    def _mangle_key(self, key: _LS) -> _LS:
+        if not self.__prefix and not self.__suffix:
+            return key
+        if self.__prefix and self.__title:
+            key = key[0].capitalize() + key[1:]
+        if self.__prefix and self.__suffix:
+            return f"{self.__prefix}{key}{self.__suffix}"
+        if self.__prefix:
+            return f"{self.__prefix}{key}"
+        return f"{key}{self.__suffix}"
+
+
+class SimpleTime(providers.DictProvider[str, any], _ManglesKeys, model.SimpleTime):
     """REST Simple Time"""
 
-    _HOUR_KEY: Final = "Hour"
-    _MIN_KEY: Final = "Min"
+    class JSON(TypedDict):
+        """JSON"""
 
-    __slots__ = ("_hour_key", "_min_key")
+        hour: int
+        min: int
 
-    def __init__(self, factory: Callable[[], dict], prefix: str = None, suffix: str = None) -> None:
-        super().__init__(factory)
-        self.__post_init__(prefix, suffix)
+    class Keys(Protocol):
+        """Keys"""
 
-    def __post_init__(self, prefix: str = None, suffix: str = None):
-        self._hour_key = f"{prefix or ''}{self._HOUR_KEY}{suffix or ''}"
-        self._min_key = f"{prefix or ''}{self._MIN_KEY}{suffix or ''}"
+        hour: Final = "hour"
+        minute: Final = "min"
 
-    @property
-    def hour(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._hour_key, 0)
+        __all__ = (hour, minute)
 
-    @property
-    def minute(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._min_key, 0)
-
-    def _copy(self):
-        if not (_d := self._factory()):
-            return None
-        return {key: value for key, value in _d.items() if key in (self._hour_key, self._min_key)}
-
-
-class _MutableFactory(_Factory):
-    def __init__(self, factory: FactoryValue[dict] = None) -> None:
-        super().__init__(None)
-        self._factory = factory
-        if factory is None:
-            _d = None
-
-            def _factory(create=False):
-                if not _d and create:
-                    _d = {}
-                return _d
-
-            self._factory: FactoryValue[dict] = _factory
-        else:
-            self._factory = factory
-
-
-class MutableSimpleTime(_MutableFactory, SimpleTime):
-    """REST Mutable Simple Time"""
+    __slots__ = ()
 
     def __init__(
-        self, factory: FactoryValue[dict] = None, prefix: str = None, suffix: str = None
+        self,
+        value: providers.ProvidedDict[str, any] | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
     ) -> None:
-        SimpleTime.__init__(self, None, prefix, suffix)
-        _MutableFactory.__init__(self, factory)
+        super().__init__(value)
+        _ManglesKeys.__init__(self, prefix, suffix)
+
+    _provided_value: JSON
+
+    @property
+    def hour(self):
+        _default = 0
+        return (
+            value.get(self._mangle_key(self.Keys.hour), _default)
+            if (value := self._provided_value)
+            else _default
+        )
+
+    @property
+    def minute(self):
+        _default = 0
+        return (
+            value.get(self._mangle_key(self.Keys.minute), _default)
+            if (value := self._provided_value)
+            else _default
+        )
+
+    @property
+    def _unmangled(self) -> JSON:
+        if not (value := self._provided_value):
+            return {}
+        return {
+            _k: value[_m]
+            for _k, _m in ((_k, self._mangle_key(_k)) for _k in self.Keys.__all__)
+            if _m in value
+        }
+
+
+class MutableSimpleTime(SimpleTime):
+    """REST Mutable Simple Time"""
+
+    __slots__ = ()
+
+    def _get_provided_value(self, create=False):
+        if (value := super()._get_provided_value(create)) is not None or not create:
+            return value
+        value = {}
+        self._set_provided_value(value)
+        return value
 
     @SimpleTime.hour.setter
     def hour(self, value):
-        if (value := self._factory(True)) is not None:
-            value[self._hour_key] = value
+        self._get_provided_value(True)[self._mangle_key(self.Keys.hour)] = int(value)
 
     @SimpleTime.minute.setter
     def minute(self, value):
-        if (value := self._factory(True)) is not None:
-            value[self._min_key] = value
+        self._get_provided_value(True)[self._mangle_key(self.Keys.minute)] = int(value)
+
+    def _update(self, **kwargs: Unpack[SimpleTime.JSON]):
+        if (value := self._get_provided_value(True)) is None:
+            return
+        value.update(
+            {
+                _m: kwargs[_k]
+                for _k, _m in ((_k, self._mangle_key(_k)) for _k in self.Keys.__all__)
+                if _k in kwargs
+            }
+        )
 
     def update(self, value: typing.SimpleTime):
         if isinstance(value, SimpleTime):
-            if (_d := value._copy()) and (_u := self._factory(True)):
-                # filter keys since this could be a partial child object
-                _u.update(_d)
+            if _d := value._unmangled:
+                self._update(**_d)
             return
         try:
             self.hour = value.hour
@@ -106,137 +151,144 @@ class MutableSimpleTime(_MutableFactory, SimpleTime):
 class Time(SimpleTime, model.Time):
     """REST Time"""
 
-    _SEC_KEY: Final = "Sec"
+    __slots__ = ()
 
-    __slots__ = ("_sec_key",)
+    class JSON(SimpleTime.JSON):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict], prefix: str = None, suffix: str = None) -> None:
-        super().__init__(factory, prefix, suffix)
-        self.__post_init__(prefix, suffix)
+        sec: int
 
-    def __post_init__(self, prefix: str = None, suffix: str = None):
-        super().__post_init__(prefix, suffix)
-        self._sec_key = f"{prefix or ''}{self._SEC_KEY}{suffix or ''}"
+    class Keys(SimpleTime.Keys, Protocol):
+        """Keys"""
+
+        second: Final = "sec"
+
+        __all__ = SimpleTime.Keys.__all__ + (second,)
+
+    _value: JSON
 
     @property
-    def second(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._sec_key, 0)
-
-    def _copy(self):
-        if not (_d := self._factory()):
-            return None
-        return {
-            key: value
-            for key, value in _d.items()
-            if key in (self._hour_key, self._min_key, self._sec_key)
-        }
+    def second(self):
+        _default = 0
+        return (
+            value.get(self._mangle_key(self.Keys.second), _default)
+            if (value := self._provided_value)
+            else _default
+        )
 
 
 class MutableTime(MutableSimpleTime, Time):
     """REST Mutable Time"""
 
-    def __init__(
-        self, factory: FactoryValue[dict] = None, prefix: str = None, suffix: str = None
-    ) -> None:
-        super().__init__(factory, prefix, suffix)
+    __slots__ = ()
 
     @Time.second.setter
     def second(self, value):
-        if (value := self._factory(True)) is not None:
-            value[self._sec_key] = value
+        self._get_provided_value(True)[self._mangle_key(self.Keys.second)] = int(value)
 
     def update(self, value: typing.Time):
-        if isinstance(value, Time):
-            if (_d := value._copy()) and (_u := self._factory(True)):
-                # filter keys since this could be a partial child object
-                _u.update(_d)
-            return
         super().update(value)
+        if isinstance(value, Time):
+            return
         try:
             self.second = value.second
         except AttributeError:
             pass
 
 
-class Date(_Factory, model.Date):
+class Date(providers.DictProvider[str, any], _ManglesKeys, model.Date):
     """REST Date"""
 
-    _YEAR_KEY: Final = "Year"
-    _MON_KEY: Final = "Mon"
-    _DAY_KEY: Final = "Day"
+    class JSON(TypedDict):
+        """JSON"""
 
-    __slots__ = ("_year_key", "_mon_key", "_day_key")
+        year: int
+        mon: int
+        day: int
 
-    def __init__(self, factory: Callable[[], dict], prefix: str = None, suffix: str = None) -> None:
-        super().__init__(factory)
-        self.__post_init__(prefix, suffix)
+    class Keys(Protocol):
+        """Keys"""
 
-    def __post_init__(self, prefix: str = None, suffix: str = None):
-        self._year_key = f"{prefix or ''}{self._YEAR_KEY}{suffix or ''}"
-        self._mon_key = f"{prefix or ''}{self._MON_KEY}{suffix or ''}"
-        self._day_key = f"{prefix or ''}{self._DAY_KEY}{suffix or ''}"
+        year: Final = "year"
+        month: Final = "mon"
+        day: Final = "day"
 
-    @property
-    def year(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._year_key, 0)
-
-    @property
-    def month(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._mon_key, 0)
-
-    @property
-    def day(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get(self._day_key, 0)
-
-    def _copy(self):
-        if not (_d := self._factory()):
-            return None
-        return {
-            key: value
-            for key, value in _d.items()
-            if key in (self._year_key, self._mon_key, self._day_key)
-        }
-
-
-class MutableDate(_MutableFactory, Date):
-    """REST Mutable Date"""
+        __all__ = (year, month, day)
 
     __slots__ = ()
 
     def __init__(
-        self, factory: FactoryValue[dict] = None, prefix: str = None, suffix: str = None
+        self,
+        value: providers.ProvidedDict[str, any] | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
     ) -> None:
-        Date.__init__(self, None, prefix, suffix)
-        _MutableFactory.__init__(self, factory)
+        super().__init__(value)
+        _ManglesKeys.__init__(self, prefix, suffix)
+
+    _value: JSON
+
+    @property
+    def year(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.year, 0)
+        return 0
+
+    @property
+    def month(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.month, 0)
+        return 0
+
+    @property
+    def day(self):
+        if value := self._provided_value:
+            return value.get(self.Keys.day, 0)
+        return 0
+
+    @property
+    def _unmangled(self) -> JSON:
+        if not (value := self._provided_value):
+            return {}
+        return {
+            _k: value[_m]
+            for _k, _m in ((_k, self._mangle_key(_k)) for _k in self.Keys.__all__)
+            if _m in value
+        }
+
+
+class MutableDate(Date):
+    """REST Mutable Date"""
+
+    __slots__ = ()
 
     @Date.year.setter
     def year(self, value):
-        if (value := self._factory(True)) is not None:
-            value[self._year_key] = value
+        self._get_provided_value(True)[self._mangle_key(self.Keys.year)] = int(value)
 
     @Date.month.setter
-    def month(self, value):
-        if (value := self._factory(True)) is not None:
-            value[self._mon_key] = value
+    def month(self, value: int):
+        self._get_provided_value(True)[self._mangle_key(self.Keys.month)] = int(value)
 
     @Date.day.setter
-    def day(self, value):
-        if (value := self._factory(True)) is not None:
-            value[self._day_key] = value
+    def day(self, value: int):
+        self._get_provided_value(True)[self._mangle_key(self.Keys.day)] = int(value)
+
+    def _update(self, **kwargs: Unpack[Date.JSON]):
+        if (value := self._get_provided_value(True)) is None:
+            return
+        value.update(
+            {
+                _m: kwargs[_k]
+                for _k, _m in ((_k, self._mangle_key(_k)) for _k in self.Keys.__all__)
+                if _k in kwargs
+            }
+        )
 
     def update(self, value: typing.Date):
         if isinstance(value, Date):
-            if (_d := value._copy()) and (_u := self._factory(True)):
-                # filter keys since this could be a partial child object
-                _u.update(_d)
+            if _d := value._unmangled:
+                self._update(**_d)
             return
         try:
             self.year = value.year
@@ -254,50 +306,47 @@ class MutableDate(_MutableFactory, Date):
 
 @Date.register
 @Time.register
-class DateTime(_Factory, model.DateTime):
+class DateTime(providers.DictProvider[str, any], _ManglesKeys, model.DateTime):
     """REST DateTime"""
 
-    __slots__ = Date.__slots__ + Time.__slots__ + SimpleTime.__slots__
+    class JSON(Date.JSON, Time.JSON):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict], prefix: str = None, suffix: str = None) -> None:
-        super().__init__(factory)
-        Date.__post_init__(self, prefix, suffix)
-        Time.__post_init__(self, prefix, suffix)
+    class Keys(Date.Keys, Time.Keys, Protocol):
+        """Keys"""
+
+        __all__ = Date.Keys.__all__ + Time.Keys.__all__
+
+    __slots__ = ()
+
+    def __init__(
+        self,
+        value: providers.ProvidedDict[str, any] | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> None:
+        super().__init__(value)
+        _ManglesKeys.__init__(self, prefix, suffix)
+
+    _value: JSON
+
+    year = MutableDate.year.setter(None)
+    month = MutableDate.month.setter(None)
+    day = MutableDate.day.setter(None)
+
+    hour = MutableTime.hour.setter(None)
+    minute = MutableTime.minute.setter(None)
+    second = MutableTime.second.setter(None)
 
     @property
-    def year(self):
-        return Date.year.fget(self)
-
-    @property
-    def month(self):
-        return Date.month.fget(self)
-
-    @property
-    def day(self):
-        return Date.day.fget(self)
-
-    @property
-    def hour(self):
-        return Time.hour.fget(self)
-
-    @property
-    def minute(self):
-        return Time.minute.fget(self)
-
-    @property
-    def second(self):
-        return Time.second.fget(self)
-
-    def _copy(self):
-        _d = Date._copy(self)
-        _t = Time._copy(self)
-        if not _d and not _t:
-            return None
-        if _d and _t:
-            _d.update(_t)
-        if _d:
-            return _d
-        return _t
+    def _unmangled(self) -> JSON:
+        if not (value := self._provided_value):
+            return {}
+        return {
+            _k: value[_m]
+            for _k, _m in ((_k, self._mangle_key(_k)) for _k in self.Keys.__all__)
+            if _m in value
+        }
 
 
 @MutableDate.register
@@ -307,64 +356,117 @@ class MutableDateTime(DateTime):
 
     __slots__ = ()
 
-    def __init__(
-        self, factory: FactoryValue[dict] = None, prefix: str = None, suffix: str = None
-    ) -> None:
-        super().__init__(factory, prefix, suffix)
+    year = MutableDate.year.setter(MutableDate.year.fset)
+    month = MutableDate.month.setter(MutableDate.year.fset)
+    day = MutableDate.day.setter(MutableDate.year.fset)
+    hour = MutableTime.hour.setter(MutableDate.year.fset)
+    minute = MutableTime.minute.setter(MutableDate.year.fset)
+    second = MutableTime.second.setter(MutableDate.year.fset)
 
-    year = DateTime.year.setter(MutableDate.year.fset)
-    month = DateTime.month.setter(MutableDate.month.fset)
-    day = DateTime.day.setter(MutableDate.day.fset)
-    hour = DateTime.hour.setter(MutableTime.hour.fset)
-    minute = DateTime.minute.setter(MutableTime.minute.fset)
-    second = DateTime.second.setter(MutableTime.second.fset)
+    def _update(self, **kwargs: Unpack[DateTime.JSON]):
+        if (value := self._get_provided_value(True)) is None:
+            return
+        value.update(
+            {
+                _m: kwargs[_k]
+                for _k, _m in ((_k, self._mangle_key(_k)) for _k in self.Keys.__all__)
+                if _k in kwargs
+            }
+        )
 
     def update(self, value: typing.DateTime):
         if isinstance(value, DateTime):
-            if (_d := value._copy()) and (_u := self._factory(True)):
-                _u.update(_d)
+            if _d := value._unmangled:
+                self._update(**_d)
             return
+
         MutableDate.update(self, value)
         MutableTime.update(self, value)
 
 
-class MinMaxRange(Generic[T]):
+T = TypeVar("T")
+
+
+class MinMaxRange(providers.DictProvider[str, any], _ManglesKeys, Generic[T]):
     """Min/Max values"""
 
-    __slots__ = ("_suffix", "_factory")
+    class JSON(TypedDict):
+        """JSON"""
+
+        min: T
+        max: T
+
+    class Keys(Protocol):
+        """Keys"""
+
+        min: Final = "min"
+        max: Final = "max"
+
+    __slots__ = ()
 
     @overload
-    def __init__(self: "MinMaxRange[int]", suffix: str, factory: Callable[[], dict]):
+    def __init__(
+        self: "MinMaxRange[int]",
+        value: providers.ProvidedDict[str, any] | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> None:
+        super().__init__(value)
+        _ManglesKeys.__init__(self, prefix, suffix)
         ...
 
-    def __init__(self, suffix: str, factory: Callable[[], dict]) -> None:
-        self._suffix = suffix
-        self._factory = factory
+    def __init__(
+        self,
+        value: providers.ProvidedDict[str, any] | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> None:
+        super().__init__(value)
+        _ManglesKeys.__init__(self, prefix, suffix)
+
+    _provided_value: JSON
 
     @property
-    def min(self) -> T | None:
-        """minimum value"""
-        if (value := self._factory()) is None:
-            return None
-        return value.get("min" + self._suffix, None)
+    def min(self) -> T:
+        if value := self._provided_value:
+            return value.get(self.Keys.min)
 
     @property
-    def max(self) -> T | None:
-        """maximum value"""
-        if (value := self._factory()) is None:
-            return None
-        return value.get("max" + self._suffix, None)
+    def max(self) -> T:
+        if value := self._provided_value:
+            return value.get(self.Keys.max)
 
 
-class StringRange:
+class StringRange(providers.DictProvider[str, any]):
     """String Ranges"""
 
-    __slots__ = ("_factory",)
+    class JSON(TypedDict):
+        """JSON"""
 
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        self._factory = factory
+        Len: MinMaxRange[int].JSON
+
+    class Keys(Protocol):
+        """Keys"""
+
+        length: Final = "Len"
+
+    __slots__ = ("__prefix", "__suffix")
+
+    def __init__(
+        self,
+        value: providers.ProvidedDict[str, any] | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> None:
+        super().__init__(value)
+        self.__prefix = prefix
+        self.__suffix = suffix
+
+    _provided_value: JSON
 
     @property
     def length(self):
         """length ranges"""
-        return MinMaxRange("Len", self._factory)
+        return MinMaxRange(
+            self._provided_value, self.__prefix, f"{self.Keys.length}{self.__suffix}"
+        )

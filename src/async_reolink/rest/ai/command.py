@@ -9,7 +9,6 @@ from . import model
 
 
 from ..connection.model import (
-    _CHANNEL_KEY,
     Response,
     ResponseTypes,
     RequestWithChannel,
@@ -25,6 +24,7 @@ class GetAiStateRequest(RequestWithChannel, ai.GetAiStateRequest):
     __slots__ = ()
 
     COMMAND: Final = "GetAiState"
+    _COMMAND_ID: Final = hash(COMMAND)
 
     def __init__(
         self,
@@ -32,47 +32,39 @@ class GetAiStateRequest(RequestWithChannel, ai.GetAiStateRequest):
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
-        self.command = type(self).COMMAND
+        self.command = self.COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
 
-
-_NONE_DICT: Final[dict] = None
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
 
 class GetAiStateResponse(
-    Response,
+    ResponseWithChannel,
     ai.GetAiStateResponse,
 ):
     """Get AI State Response"""
 
-    __slots__ = ()
-
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, command=GetAiStateRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
 
-    @property
-    def channel_id(self) -> int:
-        if (value := self._get_value()) is None:
-            return None
-        return value.get(_CHANNEL_KEY, None)
+    __slots__ = ()
 
     @property
     def state(self):
-        return model.State(self._get_value())
-
-    def can_update(self, value: any) -> TypeGuard[model.State]:
-        """Is value updatable"""
-        return isinstance(value, model.State)
+        return model.UpdatableState(self._value)
 
 
 class GetAiConfigRequest(RequestWithChannel, ai.GetAiConfigRequest):
     """Get AI Configuration"""
 
     COMMAND: Final = "GetAiCfg"
+    _COMMAND_ID: Final = hash(COMMAND)
 
     def __init__(
         self,
@@ -80,9 +72,13 @@ class GetAiConfigRequest(RequestWithChannel, ai.GetAiConfigRequest):
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
         super().__init__()
-        self.command = type(self).COMMAND
+        self.command = self.COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
+
+    @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
 
 
 class GetAiConfigResponse(
@@ -92,30 +88,21 @@ class GetAiConfigResponse(
     """Get AI Configuration Response"""
 
     @classmethod
-    def from_response(cls, response: any, request: Request | None = None):
-        if super().is_response(response, command=GetAiStateRequest.COMMAND):
-            return cls(response, request_id=request.id if request else None)
+    def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
+        if super().is_response(response, command=GetAiConfigRequest.COMMAND):
+            return cls(response, request_id=request.id if request else None, **kwargs)
         return None
 
     @property
-    def channel_id(self) -> int:
-        if (value := self._get_value()) is None:
-            return None
-        return value.get(_CHANNEL_KEY, None)
-
-    @property
     def config(self):
-        return model.Config(self._get_value())
-
-    def can_update(self, value: any) -> TypeGuard[model.Config]:
-        """Is value updatable"""
-        return isinstance(value, model.Config)
+        return model.Config(self._value)
 
 
 class SetAiConfigRequest(RequestWithChannel, ai.SetAiConfigRequest):
     """Set AI Configuration"""
 
     COMMAND: Final = "SetAiCfg"
+    _COMMAND_ID: Final = hash(COMMAND)
 
     def __init__(
         self,
@@ -123,10 +110,18 @@ class SetAiConfigRequest(RequestWithChannel, ai.SetAiConfigRequest):
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ) -> None:
         super().__init__()
-        self.command = type(self).COMMAND
+        self.command = self.COMMAND
         self.response_type = response_type
         self.channel_id = channel_id
 
     @property
+    def id(self):
+        return self._COMMAND_ID ^ self.channel_id
+
+    @property
     def config(self):
         return model.MutableConfig(self._get_parameter)
+
+    @config.setter
+    def config(self, value):
+        self.config.update(value)

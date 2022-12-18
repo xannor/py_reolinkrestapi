@@ -1,23 +1,31 @@
 """Rest Typings"""
 
 from types import MappingProxyType
-from typing import Final, Protocol, TypeVar
+from typing import Final, ValuesView, overload
 
 from async_reolink.api.typing import StreamTypes
 
-STR_STREAMTYPES_MAP: Final = MappingProxyType(
-    {_e.name.lower(): _e for _e in StreamTypes}
-)
-
-STREAMTYPES_STR_MAP: Final = MappingProxyType(
-    {_v: _k for _k, _v in STR_STREAMTYPES_MAP.items()}
-)
-
-_T = TypeVar("_T")
+_STREAMTYPES_MAP: Final = MappingProxyType({_e: _e.name.lower() for _e in StreamTypes})
 
 
-class FactoryValue(Protocol[_T]):
-    """Value factory protocol"""
+class _Missing:
+    pass
 
-    def __call__(self, create=False) -> _T:
-        ...
+
+_MISSING: Final = _Missing()
+
+
+@overload
+def stream_type_str() -> ValuesView[str]:
+    ...
+
+
+@overload
+def stream_type_str(value: StreamTypes) -> str:
+    ...
+
+
+def stream_type_str(value: StreamTypes = _MISSING):
+    if value is _MISSING:
+        return _STREAMTYPES_MAP.values()
+    return _STREAMTYPES_MAP.get(value)
