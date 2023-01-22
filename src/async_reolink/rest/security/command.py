@@ -9,15 +9,18 @@ from ..connection.model import (
     Response as RestResponse,
 )
 
-from ..security.typing import level_type_str
+from ..security.typing import LoginType, level_type_str
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
 
 from .model import LoginToken, UserInfo
 
 from ..model import StringRange
 
 # pylint:disable=missing-function-docstring
+
+_DefaultLoginType: Final = LoginType.NORMAL
+_DefaultLoginTypeValue: Final = _DefaultLoginType.value
 
 
 class LoginRequest(Request, security.LoginRequest):
@@ -41,7 +44,7 @@ class LoginRequest(Request, security.LoginRequest):
 
                 user_name: Final = "userName"
                 password: Final = "password"
-                version: Final = "Version"
+                login_type: Final = "Version"
 
         class JSON(TypedDict):
             """JSON"""
@@ -55,6 +58,7 @@ class LoginRequest(Request, security.LoginRequest):
 
     __slots__ = ()
 
+    _get_parameter: providers.FactoryValue[Parameter.JSON]
     _parameter: Parameter.JSON
 
     COMMAND: Final = "Login"
@@ -66,26 +70,32 @@ class LoginRequest(Request, security.LoginRequest):
 
     def __init__(
         self,
-        user_name: str,
-        password: str,
-        version: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.user_name = user_name
-        self.password = password
-        self.version = version
+        /,
+        user_name: str = ...,
+        password: str = ...,
+        login_type: LoginType = ...,
+        response_type: ResponseTypes = ...,
+    ):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
+        if user_name and user_name is not ...:
+            self.user_name = user_name
+        if password and password is not ...:
+            self.password = password
+        if login_type is None or login_type is ...:
+            login_type = _DefaultLoginType
+        self.login_type = login_type
 
-    def _get_login(self, create=False):
-        if not (value := self._get_parameter(create)):
-            return None
-        if not (login := value.get(self.Parameter.Keys.login)) and create:
-            login: dict = value.setdefault(self.Parameter.Keys.login, {})
-        return login
+    def _get_login(self, create=False) -> Parameter.Login.JSON:
+        return self.lookup_value(
+            self._get_parameter,
+            self.Parameter.Keys.login,
+            create=create,
+            default_factory=lambda: dict() if create else None,
+        )
 
-    _login: Parameter.Login.JSON = property(_get_login)
+    @property
+    def _login(self):
+        return self._get_login()
 
     @property
     def user_name(self):
@@ -108,14 +118,16 @@ class LoginRequest(Request, security.LoginRequest):
         self._get_login(True)[self.Parameter.Login.Keys.password] = str(value)
 
     @property
-    def version(self):
+    def login_type(self):
         if value := self._login:
-            return value.get(self.Parameter.Login.Keys.version, 0)
-        return 0
+            return LoginType(
+                value.get(self.Parameter.Login.Keys.login_type, _DefaultLoginTypeValue)
+            )
+        return _DefaultLoginType
 
-    @version.setter
-    def version(self, value):
-        self._get_login(True)[self.Parameter.Login.Keys.version] = int(value)
+    @login_type.setter
+    def login_type(self, value):
+        self._get_login(True)[self.Parameter.Login.Keys.login_type] = LoginType(value).value
 
 
 class LoginResponse(RestResponse, security.LoginResponse):
@@ -142,17 +154,12 @@ class LoginResponse(RestResponse, security.LoginResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
     @property
-    def _token(self):
-        if value := self._value:
-            return value.get(self.Value.Keys.token)
-        return None
-
-    @property
     def token(self):
-        return LoginToken(lambda: self._token)
+        return LoginToken(self.lookup_factory(self._get_value, self.Value.Keys.token, default=None))
 
 
 class LogoutRequest(Request, security.LogoutRequest):
@@ -166,6 +173,9 @@ class LogoutRequest(Request, security.LogoutRequest):
     @property
     def id(self):
         return self._COMMAND_ID
+
+    def __init__(self, /, response_type: ResponseTypes = ...):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
         super().__init__()
@@ -185,31 +195,32 @@ class GetUserRequest(Request, security.GetUserRequest):
     def id(self):
         return self._COMMAND_ID
 
-    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+    def __init__(self, /, response_type: ResponseTypes = ...):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
-class _Users(providers.ListProvider[dict[str, any]], Sequence[UserInfo]):
+class _Users(providers.Value[list[dict[str, any]]], Sequence[UserInfo]):
     __slots__ = ()
 
     def __getitem__(self, __index: int):
-        return UserInfo(lambda _: self._get_index_value(self._get_provided_value, __index))
+        return UserInfo(self.lookup_factory(self.__get_value__, __index, default=None))
 
     def __len__(self):
-        if value := self._provided_value:
+        if value := self.__get_value__:
             return len(value)
         return 0
 
 
-class _UserRange(providers.DictProvider[str, any]):
+class _UserRange(providers.Value[dict[str, any]]):
 
     __slots__ = ()
 
     @property
     def levels(self):
-        if not (value := self._provided_value.get(UserInfo.Keys.level)):
+        value: any
+        if not isinstance(
+            value := self.lookup_value(self.__get_value__, UserInfo.Keys.level, default=None), list
+        ):
             return []
 
         return list(
@@ -224,12 +235,16 @@ class _UserRange(providers.DictProvider[str, any]):
 
     @property
     def user_name(self):
-        return StringRange(lambda _: self._provided_value.get(UserInfo.Keys.user_name))
+        return StringRange(
+            self.lookup_factory(self.__get_value__, UserInfo.Keys.user_name, default=None)
+        )
 
     @property
     def password(self):
         return StringRange(
-            lambda _: self._provided_value.get(LoginRequest.Parameter.Login.Keys.password)
+            self.lookup_factory(
+                self.__get_value__, LoginRequest.Parameter.Login.Keys.password, default=None
+            )
         )
 
 
@@ -246,12 +261,18 @@ class GetUserResponse(RestResponse, security.GetUserResponse):
 
     @property
     def users(self):
-        return _Users(lambda _: self._provided_value.get(LoginRequest.Parameter.Keys.login))
+        return _Users(
+            self.lookup_factory(self._get_value, LoginRequest.Parameter.Keys.login, default=None)
+        )
 
     @property
     def initial(self):
-        return UserInfo(lambda _: self._initial.get(LoginRequest.Parameter.Keys.login))
+        return UserInfo(
+            self.lookup_factory(self._get_initial, LoginRequest.Parameter.Keys.login, default=None)
+        )
 
     @property
     def range(self):
-        return _UserRange(lambda _: self._range.get(LoginRequest.Parameter.Keys.login))
+        return _UserRange(
+            self.lookup_factory(self._get_range, LoginRequest.Parameter.Keys.login, default=None)
+        )

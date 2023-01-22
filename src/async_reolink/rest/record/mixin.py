@@ -30,7 +30,7 @@ class Record(BaseRecord, WithConnection):
         return True
 
     def _create_get_snapshot(self, channel_id: int):
-        return command.GetSnapshotRequest(channel_id)
+        return command.GetSnapshotRequest(channel_id=channel_id)
 
     def _create_search(
         self,
@@ -40,7 +40,7 @@ class Record(BaseRecord, WithConnection):
         only_status: bool,
         stream_type: typing.StreamTypes,
     ):
-        request = command.SearchRecordingsRequest(channel_id)
+        request = command.SearchRecordingsRequest(channel_id=channel_id)
         request.search.start = start_time
         request.search.end = end_time
         request.search.status_only = only_status

@@ -1,280 +1,343 @@
 """System capabilities"""
 
 from enum import Flag
-from functools import reduce
-from itertools import chain, combinations
-from types import MappingProxyType
-from typing import Callable, Final, Mapping, TypeVar, overload
+from typing import (
+    ClassVar,
+    Final,
+    Mapping,
+    Protocol,
+    TypeAlias,
+    TypedDict,
+    get_args,
+    overload,
+)
+from typing_extensions import TypeVar
+
 from async_reolink.api.system import capabilities
+
+from .._utilities.providers import value as providers
+from .._utilities.descriptors import instance_or_classproperty
+from .._utilities.enum import FlagMap, EnumMap
+
+_JSONDict: TypeAlias = dict[str, any]
 
 # pylint: disable=too-few-public-methods
 # pylint: disable=missing-function-docstring
 
-_defaults: dict[type, any] = {None: 0}
+_defaults: dict[type, any] = {None: 0, int: 0, bool: False, str: ""}
 
-T = TypeVar("T")
+_T = TypeVar("_T", infer_variance=True)
 
-F = TypeVar("F", bound=Flag)
+_F = TypeVar("_F", bound=Flag)
 
-
-def _flag_map(__flag_map: dict[int, F]):
-    def bor(a: F, b: F) -> F:
-        return a | b
-
-    lookup = {_v: _k for _k, _v in __flag_map.items()}
-    values = list(__flag_map.values())
-    for t in chain.from_iterable(combinations(values, i) for i in range(len(values) + 1)):
-        if len(t) == 0:
-            continue
-        vt = map(lambda f: lookup[f], t)
-        f = reduce(bor, t)
-        v = reduce(bor, vt)
-        __flag_map[v] = f
-
-    return __flag_map
-
-
-def _map_factory(__map: dict[int, T], __default: T = None) -> Callable[[int], T]:
-    if __default is None and 0 in __map:
-        __default = __map[0]
-
-    def _factory(value: int):
-        return __map.get(value, __default)
-
-    _defaults[_factory] = __default
-    return _factory
-
-
-_INT_PERMISSION_MAP: Final = MappingProxyType(
-    _flag_map(
-        {
-            1: capabilities.Permissions.OPTION,
-            2: capabilities.Permissions.WRITE,
-            4: capabilities.Permissions.READ,
-        }
-    )
+_Permissions = FlagMap(
+    {
+        capabilities.Permissions.OPTION: 1,
+        capabilities.Permissions.WRITE: 2,
+        capabilities.Permissions.READ: 4,
+    }
 )
-_NO_PERMISSIONS: capabilities.Permissions = None
+
+_MISSING_VALUE: Final = ...
 
 
-class Capability(capabilities.Capability[T]):
+class _NoKey:
+    ...
+
+
+_MISSING_KEY: Final = _NoKey()
+
+_CT = TypeVar("_CT", infer_variance=True, default=int)
+
+
+class Capability(providers.Value[_JSONDict], capabilities.Capability[_CT]):
     """Capability"""
 
-    __slots__ = ("_factory", "_init")
+    class JSON(TypedDict):
+        """JSON"""
 
-    @overload
-    def __init__(self: "Capability[int]", factory: Callable[[], dict] = None):
-        ...
+        ver: int
+        permit: int
 
-    @overload
+    class Keys(Protocol):
+        """Keys"""
+
+        value: Final = "ver"
+        permission: Final = "permit"
+
+    @instance_or_classproperty
+    def Type(self):
+        return self.__type
+
+    @Type.class_getter
+    def Type(cls):
+        args = get_args(cls)
+        if len(args) > 0:
+            return args[0]
+        return int
+
+    Permissions: ClassVar[type[capabilities.Permissions]] = capabilities.Permissions
+
+    __slots__ = ("__type", "__map")
+
     def __init__(
-        self: "Capability[T]", factory: Callable[[], dict], __type: Callable[[int], T]
+        self,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None,
+        __type: type[_CT] | EnumMap[_CT, int] | FlagMap[_CT, int] = _MISSING_VALUE,
+        /,
+        **kwargs: any,
     ) -> None:
-        ...
+        super().__init__(value, **kwargs)
+        # self._get_value: providers.FactoryValue[int] = self.lookup_factory(
+        #     self.__get_value__, self.Keys.value, default=_MISSING_KEY
+        # )
+        # self._get_permissions: providers.FactoryValue[int] = self.lookup_factory(
+        #     self.__get_value__, self.Keys.permission, default=_MISSING_KEY
+        # )
+        if __type in {_MISSING_VALUE, None}:
+            __type = type(self).Type
+        if isinstance(__type, EnumMap):
+            self.__map = __type
+            __type = self.__map.Enum
+        elif isinstance(__type, FlagMap):
+            self.__map = __type
+            __type = self.__map.Flag
+        else:
+            self.__map = None
 
-    def __init__(self, factory: Callable[[], dict], __type: Callable[[int], T] = None) -> None:
-        super().__init__()
-        self._factory = factory
-        self._init = __type
-        if __type not in _defaults:
-            _defaults[__type] = __type(0)
+        self.__type: type[_T] = __type
 
-    def _get_value(self) -> int:
-        if (value := self._factory()) is None:
-            return 0
-        return value.get("ver", 0)
+    __get_value__: providers.FactoryValue[JSON]
+
+    def _get_value(self, create=False) -> int:
+        return self.lookup_value(
+            self.__get_value__, self.Keys.value, create=create, default=_MISSING_KEY
+        )
 
     @property
-    def value(self) -> T:
-        value = self._get_value()
-        if value == 0:
-            return _defaults[self._init]
-        if self._init is not None:
-            return self._init(value)
+    def _raw_value(self):
+        if (value := self._get_value()) is None or value is _MISSING_KEY or value is _MISSING_VALUE:
+            return None
         return value
 
     @property
+    def value(self) -> _T:
+        __type = self.Type
+        if (value := self._get_value()) is _MISSING_KEY:
+            if (value := _defaults.get(self.Type, _MISSING_VALUE)) is _MISSING_VALUE:
+                if isinstance(self.__map, EnumMap):
+                    value = self.__map.DEFAULT
+                elif isinstance(self.__map, FlagMap):
+                    value = self.__map.NONE
+                else:
+                    value = __type(0)
+                _defaults[__type] = value
+        return self.__type(value)
+
+    def _get_permissions(self, create=False) -> int:
+        return self.lookup_value(
+            self.__get_value__, self.Keys.permission, create=create, default=_MISSING_KEY
+        )
+
+    @property
     def permissions(self):
-        if (value := self._factory()) is None:
-            return _NO_PERMISSIONS
-        return _INT_PERMISSION_MAP.get(value.get("permit", 0), _NO_PERMISSIONS)
+        if (value := self._get_permissions()) is _MISSING_KEY:
+            return _Permissions.NONE
+        return _Permissions(value)
 
     def __bool__(self):
-        if self.permissions is None or capabilities.Permissions.READ not in self.permissions:
+        if (perms := self.permissions) is None or capabilities.Permissions.READ not in perms:
             return False
-        return bool(self._get_value())
+        return bool(self._raw_value)
 
     def __index__(self):
-        if self.permissions is None or capabilities.Permissions.READ not in self.permissions:
+        if (perms := self.permissions) is None or capabilities.Permissions.READ not in perms:
             return 0
-        return self._get_value()
+        return self._raw_value or 0
 
     def __int__(self):
-        if self.permissions is None or capabilities.Permissions.READ not in self.permissions:
+        if (perms := self.permissions) is None or capabilities.Permissions.READ not in perms:
             return 0
-        return self._get_value()
+        return self._raw_value or 0
 
     def __str__(self):
-        if self.permissions is None or capabilities.Permissions.READ not in self.permissions:
+        if (perms := self.permissions) is None or capabilities.Permissions.READ not in perms:
             return ""
         return str(self.value)
 
     def __eq__(self, __o: object) -> bool:
         if hasattr(__o, "__index__"):
-            return self._get_value() == __o.__index__()
+            return self._raw_value == __o.__index__()
         return self.value == __o
 
-    def __repr__(self):
-        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
-
-_INT_CLOUDSTORAGE: Final = _map_factory(
-    _flag_map(
-        {
-            1 << 0: capabilities.CloudStorage.UPLOAD,
-            1 << 1: capabilities.CloudStorage.CONFIG,
-            1 << 3: capabilities.CloudStorage.DEPLOY,
-        }
-    )
-)
-
-_INT_DAYNIGHT: Final = _map_factory(
-    {1: capabilities.DayNight.DAY_NIGHT, 2: capabilities.DayNight.THRESHOLD}
-)
-
-_INT_DDNS: Final = _map_factory(
+_CloudStorage: Final = FlagMap(
     {
-        1: capabilities.DDns.SWAN,
-        2: capabilities.DDns.THREE322,
-        3: capabilities.DDns.DYNDNS,
-        4: capabilities.DDns.SWAN_3322,
-        5: capabilities.DDns.SWAN_DYNDNS,
-        6: capabilities.DDns.DYNDNS_3322,
-        7: capabilities.DDns.SWAN_DYNDNS_3322,
-        8: capabilities.DDns.NOIP,
-        9: capabilities.DDns.DYNDNS_NOIP,
+        capabilities.CloudStorage.UPLOAD: 1 << 0,
+        capabilities.CloudStorage.CONFIG: 1 << 1,
+        capabilities.CloudStorage.DEPLOY: 1 << 3,
     }
 )
 
-_INT_EMAIL: Final = _map_factory(
+_DayNight: Final = EnumMap(
     {
-        1: capabilities.Email.JPEG,
-        2: capabilities.Email.VIDEO_JPEG,
-        3: capabilities.Email.VIDEO_JPEG_NICK,
+        capabilities.DayNight.DAY_NIGHT: 1,
+        capabilities.DayNight.THRESHOLD: 2,
     }
 )
 
-_INT_ENCODINGTYPE: Final = _map_factory(
-    {0: capabilities.EncodingType.H264, 1: capabilities.EncodingType.H265}
-)
-
-_INT_FLOODLIGHT: Final = _map_factory(
-    {1: capabilities.FloodLight.WHITE, 2: capabilities.FloodLight.AUTO}
-)
-
-_INT_FTP: Final = _map_factory(
+_DDns: Final = EnumMap(
     {
-        1: capabilities.Ftp.STREAM,
-        2: capabilities.Ftp.JPEG_STREAM,
-        3: capabilities.Ftp.MODE,
-        4: capabilities.Ftp.JPEG_STREAM_MODE,
-        5: capabilities.Ftp.STREAM_MODE_TYPE,
-        6: capabilities.Ftp.JPEG_STREAM_MODE_TYPE,
+        capabilities.DDns.SWAN: 1,
+        capabilities.DDns.THREE322: 2,
+        capabilities.DDns.DYNDNS: 3,
+        capabilities.DDns.SWAN_3322: 4,
+        capabilities.DDns.SWAN_DYNDNS: 5,
+        capabilities.DDns.DYNDNS_3322: 6,
+        capabilities.DDns.SWAN_DYNDNS_3322: 7,
+        capabilities.DDns.NOIP: 8,
+        capabilities.DDns.DYNDNS_NOIP: 9,
     }
 )
 
-_INT_LIVE: Final = _map_factory(
-    {1: capabilities.Live.MAIN_EXTERN_SUB, 2: capabilities.Live.MAIN_SUB}
-)
-
-_INT_OSD: Final = _map_factory({1: capabilities.Osd.SUPPORTED, 2: capabilities.Osd.DISTINCT})
-
-_INT_PTZCONTROL: Final = _map_factory(
-    {1: capabilities.PTZControl.ZOOM, 2: capabilities.PTZControl.ZOOM_FOCUS}
-)
-
-_INT_PTZDIRECTION: Final = _map_factory(
-    {0: capabilities.PTZDirection.EIGHT_AUTO, 1: capabilities.PTZDirection.FOUR_NO_AUTO}
-)
-
-_INT_PTZTYPE: Final = _map_factory(
+_Email: Final = EnumMap(
     {
-        1: capabilities.PTZType.AF,
-        2: capabilities.PTZType.PTZ,
-        3: capabilities.PTZType.PT,
-        4: capabilities.PTZType.BALL,
-        5: capabilities.PTZType.PTZ_NO_SPEED,
+        capabilities.Email.JPEG: 1,
+        capabilities.Email.VIDEO_JPEG: 2,
+        capabilities.Email.VIDEO_JPEG_NICK: 3,
     }
 )
 
-_INT_RECORDSCHEDULE: Final = _map_factory(
-    {1: capabilities.RecordSchedule.MOTION, 2: capabilities.RecordSchedule.MOTION_LIVE}
-)
-
-_INT_SCHEDULEVERSION: Final = _map_factory(
-    {0: capabilities.ScheduleVersion.BASIC, 1: capabilities.ScheduleVersion.V20}
-)
-
-_INT_TIME: Final = _map_factory(
+_EncodingType: Final = EnumMap(
     {
-        1: capabilities.Time.SUNDAY,
-        2: capabilities.Time.ANYDAY,
+        capabilities.EncodingType.H264: 0,
+        capabilities.EncodingType.H265: 1,
     }
 )
 
-_INT_UPGRADE: Final = _map_factory({1: capabilities.Upgrade.MANUAL, 2: capabilities.Upgrade.ONLINE})
+_Floodlight: Final = EnumMap(
+    {
+        capabilities.FloodLight.WHITE: 1,
+        capabilities.FloodLight.AUTO: 2,
+    }
+)
 
-_INT_VIDEOCLIP: Final = _map_factory(
-    {1: capabilities.VideoClip.FIXED, 2: capabilities.VideoClip.MOD}
+_FTP: Final = EnumMap(
+    {
+        capabilities.Ftp.STREAM: 1,
+        capabilities.Ftp.JPEG_STREAM: 2,
+        capabilities.Ftp.MODE: 3,
+        capabilities.Ftp.JPEG_STREAM_MODE: 4,
+        capabilities.Ftp.STREAM_MODE_TYPE: 5,
+        capabilities.Ftp.JPEG_STREAM_MODE_TYPE: 6,
+    }
+)
+
+_Live: Final = EnumMap(
+    {
+        capabilities.Live.MAIN_EXTERN_SUB: 1,
+        capabilities.Live.MAIN_SUB: 2,
+    }
+)
+
+_OSD: Final = EnumMap(
+    {
+        capabilities.Osd.SUPPORTED: 1,
+        capabilities.Osd.DISTINCT: 2,
+    }
+)
+
+_PtzControl: Final = EnumMap(
+    {
+        capabilities.PTZControl.ZOOM: 1,
+        capabilities.PTZControl.ZOOM_FOCUS: 2,
+    }
+)
+
+_PtzDirection: Final = EnumMap(
+    {
+        capabilities.PTZDirection.EIGHT_AUTO: 0,
+        capabilities.PTZDirection.FOUR_NO_AUTO: 1,
+    }
+)
+
+_PtzType: Final = EnumMap(
+    {
+        capabilities.PTZType.AF: 1,
+        capabilities.PTZType.PTZ: 2,
+        capabilities.PTZType.PT: 3,
+        capabilities.PTZType.BALL: 4,
+        capabilities.PTZType.PTZ_NO_SPEED: 5,
+    }
+)
+
+_RecordSchedule: Final = EnumMap(
+    {
+        capabilities.RecordSchedule.MOTION: 1,
+        capabilities.RecordSchedule.MOTION_LIVE: 2,
+    }
+)
+
+_ScheduleVersion: Final = EnumMap(
+    {
+        capabilities.ScheduleVersion.BASIC: 0,
+        capabilities.ScheduleVersion.V20: 1,
+    }
 )
 
 
-class ChannelCapabilities(capabilities.ChannelCapabilities):
+_Time: Final = EnumMap(
+    {
+        capabilities.Time.SUNDAY: 1,
+        capabilities.Time.ANYDAY: 2,
+    }
+)
+
+
+_Upgrade: Final = EnumMap(
+    {
+        capabilities.Upgrade.MANUAL: 1,
+        capabilities.Upgrade.ONLINE: 2,
+    }
+)
+
+
+_VideoClip: Final = EnumMap(
+    {
+        capabilities.VideoClip.FIXED: 1,
+        capabilities.VideoClip.MOD: 2,
+    }
+)
+
+
+class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabilities):
     """Channel Capabilities"""
 
-    __slots__ = ("_factory",)
-
-    def __init__(self, factory: Callable[[], dict]) -> None:
-        super().__init__()
-        self._factory = factory
-
-    def _keyed_factory(self, key: str):
-        def _factory() -> dict:
-            if (value := self._factory()) is None:
-                return None
-            return value.get(key, None)
-
-        return _factory
-
-    class AI(capabilities.ChannelCapabilities.AI):
+    class AI(providers.Value[_JSONDict], capabilities.ChannelCapabilities.AI):
         """AI"""
 
-        __slots__ = ("_factory",)
-
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
-
-        class Track(capabilities.ChannelCapabilities.AI.Track):
+        class Track(providers.Value[_JSONDict], capabilities.ChannelCapabilities.AI.Track):
             """Track"""
 
-            __slots__ = ("_factory",)
+            class JSON(TypedDict):
+                """JSON"""
 
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
+                aiTrack: Capability.JSON
+                aiTrackDogCat: Capability.JSON
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
+            class Keys(Protocol):
+                """Keys"""
 
-                return _factory
+                value: Final = "aiTrack"
+                pet: Final = "aiTrackDogCat"
+
+            __slots__ = ()
 
             @property
             def _value(self):
-                return Capability(self._keyed_factory("aiTrack"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.value, default=None), bool
+                )
 
             def __bool__(self):
                 return self._value.__bool__()
@@ -301,113 +364,126 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
             @property
             def pet(self):
-                return Capability(self._keyed_factory("aiTrackDogCat"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.pet, default=None),
+                    bool,
+                )
+
+        class JSON(Track.JSON, TypedDict):
+            """JSON"""
+
+        class Keys(Protocol):
+            """Keys"""
+
+            track: "ChannelCapabilities.AI.Track.Keys"
+
+        __slots__ = ()
 
         @property
         def track(self):
-            return type(self).Track(self._factory)
+            return self.Track(self.__get_value__)
 
-    @property
-    def ai(self):
-        return type(self).AI(self._factory)
-
-    class Alarm(capabilities.ChannelCapabilities.Alarm):
+    class Alarm(providers.Value[_JSONDict], capabilities.ChannelCapabilities.Alarm):
         """Alarm"""
 
-        __slots__ = ("_factory",)
+        class JSON(TypedDict):
+            """JSON"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            alarmAudio: Capability.JSON
+            alarmIoIn: Capability.JSON
+            alarmIoOut: Capability.JSON
+            alarmMd: Capability.JSON
+            alarmRf: Capability.JSON
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+        class Keys(Protocol):
+            """Keys"""
 
-            return _factory
+            audio: Final = "alarmAudio"
+            io_in: Final = "alarmIoIn"
+            io_out: Final = "alarmIoOut"
+            motion: Final = "alarmMd"
+            rf: Final = "alarmRf"
+
+        __slots__ = ()
 
         @property
         def audio(self):
-            return Capability(self._keyed_factory("alarmAudio"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.audio, default=None), bool
+            )
 
         @property
         def io_in(self):
-            return Capability(self._keyed_factory("alarmIoIn"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.io_in, default=None), bool
+            )
 
         @property
         def io_out(self):
-            return Capability(self._keyed_factory("alarmIoOut"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.io_out, default=None),
+                bool,
+            )
 
         @property
         def motion(self):
-            return Capability(self._keyed_factory("alarmMd"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.motion, default=None),
+                bool,
+            )
 
         @property
         def rf(self):
-            return Capability(self._keyed_factory("alarmRf"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.rf, default=None), bool
+            )
 
-    @property
-    def alarm(self):
-        return type(self).Alarm(self._factory)
-
-    @property
-    def battery(self):
-        return Capability(self._keyed_factory("battery"))
-
-    @property
-    def battery_analysis(self):
-        return Capability(self._keyed_factory("batAnalysis"))
-
-    @property
-    def camera_mode(self):
-        return Capability(self._keyed_factory("cameraMode"))
-
-    @property
-    def disable_autofocus(self):
-        return Capability(self._keyed_factory("disableAutoFocus"))
-
-    @property
-    def enc(self):
-        return Capability(self._keyed_factory("enc"))
-
-    @property
-    def floodlight(self):
-        return Capability(self._keyed_factory("floodLight"), _INT_FLOODLIGHT)
-
-    @property
-    def ftp(self):
-        return Capability(self._keyed_factory("ftp"), _INT_FTP)
-
-    @property
-    def image(self):
-        return Capability(self._keyed_factory("image"))
-
-    @property
-    def indicator_light(self):
-        return Capability(self._keyed_factory("indicatorLight"))
-
-    class ISP(capabilities.ChannelCapabilities.ISP):
+    class ISP(providers.Value[_JSONDict], capabilities.ChannelCapabilities.ISP):
         """ISP"""
 
-        __slots__ = ("_factory",)
+        class JSON(TypedDict):
+            """JSON"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            isp: Capability.JSON
+            isp3Dnr: Capability.JSON
+            ispAntiFlick: Capability.JSON
+            ispBackLight: Capability.JSON
+            ispBright: Capability.JSON
+            ispContrast: Capability.JSON
+            ispDayNight: Capability.JSON
+            ispExposureMode: Capability.JSON
+            ispFlip: Capability.JSON
+            ispHue: Capability.JSON
+            ispMirror: Capability.JSON
+            ispSatruation: Capability.JSON
+            ispSharpen: Capability.JSON
+            ispWhiteBalance: Capability.JSON
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+        class Keys(Protocol):
+            """Keys"""
 
-            return _factory
+            value: Final = "isp"
+            threeDnr: Final = "isp3Dnr"
+            antiflicker: Final = "ispAntiFlick"
+            backlight: Final = "ispBackLight"
+            bright: Final = "ispBright"
+            contrast: Final = "ispContrast"
+            day_night: Final = "ispDayNight"
+            exposure_mode: Final = "ispExposureMode"
+            flip: Final = "ispFlip"
+            hue: Final = "ispHue"
+            mirror: Final = "ispMirror"
+            satruation: Final = "ispSatruation"
+            sharpen: Final = "ispSharpen"
+            white_balance: Final = "ispWhiteBalance"
+
+        __slots__ = ()
 
         @property
         def _value(self):
-            return Capability(self._keyed_factory("isp"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.value, default=None), bool
+            )
 
         def __bool__(self):
             return self._value.__bool__()
@@ -434,265 +510,319 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
         @property
         def threeDnr(self):
-            return Capability(self._keyed_factory("isp3Dnr"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.threeDnr, default=None),
+                bool,
+            )
 
         @property
         def antiflicker(self):
-            return Capability(self._keyed_factory("ispAntiFlick"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.antiflicker, default=None),
+                bool,
+            )
 
         @property
         def backlight(self):
-            return Capability(self._keyed_factory("ispBackLight"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.backlight, default=None),
+                bool,
+            )
 
         @property
         def bright(self):
-            return Capability(self._keyed_factory("ispBright"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.bright, default=None),
+                bool,
+            )
 
         @property
         def contrast(self):
-            return Capability(self._keyed_factory("ispContrast"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.contrast, default=None),
+                bool,
+            )
 
         @property
         def day_night(self):
-            return Capability(self._keyed_factory("ispDayNight"), _INT_DAYNIGHT)
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.day_night, default=None),
+                _DayNight,
+            )
 
         @property
         def exposure_mode(self):
-            return Capability(self._keyed_factory("ispExposureMode"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.exposure_mode, default=None),
+                bool,
+            )
 
         @property
         def flip(self):
-            return Capability(self._keyed_factory("ispFlip"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.flip, default=None), bool
+            )
 
         @property
         def hue(self):
-            return Capability(self._keyed_factory("ispHue"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.hue, default=None), bool
+            )
 
         @property
         def mirror(self):
-            return Capability(self._keyed_factory("ispMirror"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.mirror, default=None),
+                bool,
+            )
 
         @property
         def satruation(self):
-            return Capability(self._keyed_factory("ispSatruation"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.satruation, default=None),
+                bool,
+            )
 
         @property
         def sharpen(self):
-            return Capability(self._keyed_factory("ispSharpen"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.sharpen, default=None),
+                bool,
+            )
 
         @property
         def white_balance(self):
-            return Capability(self._keyed_factory("ispWhiteBalance"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.white_balance, default=None),
+                bool,
+            )
 
-    @property
-    def isp(self):
-        return type(self).ISP(self._factory)
-
-    @property
-    def led_control(self):
-        return Capability(self._keyed_factory("ledControl"))
-
-    @property
-    def live(self):
-        return Capability(self._keyed_factory("live"), _INT_LIVE)
-
-    @property
-    def main_encoding(self):
-        return Capability(self._keyed_factory("mainEncType"), _INT_ENCODINGTYPE)
-
-    @property
-    def mask(self):
-        return Capability(self._keyed_factory("mask"))
-
-    class MD(capabilities.ChannelCapabilities.MD):
+    class MD(providers.Value[_JSONDict], capabilities.ChannelCapabilities.MD):
         """MotionDetection"""
 
-        __slots__ = ("_factory",)
-
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
-
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
-
-            return _factory
-
-        class Trigger(capabilities.ChannelCapabilities.MD.Trigger):
+        class Trigger(
+            providers.Value[_JSONDict],
+            capabilities.ChannelCapabilities.MD.Trigger,
+        ):
             """Trigger"""
 
-            __slots__ = ("_factory",)
+            class JSON(TypedDict):
+                """JSON"""
 
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
+                mdTriggerAudio: Capability.JSON
+                mdTriggerRecord: Capability.JSON
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
+            class Keys(Protocol):
+                """Keys"""
 
-                return _factory
+                audo: Final = "mdTriggerAudio"
+                record: Final = "mdTriggerRecord"
+
+            __slots__ = ()
 
             @property
             def audio(self):
-                return Capability(self._keyed_factory("mdTriggerAudio"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.audo, default=None),
+                    bool,
+                )
 
             @property
             def record(self):
-                return Capability(self._keyed_factory("mdTriggerRecord"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.record, default=None),
+                    bool,
+                )
+
+        class JSON(Trigger.JSON, TypedDict):
+            """JSON"""
+
+            mdWithPir: Capability.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            with_pir: Final = "mdWithPir"
+            trigger: "ChannelCapabilities.MD.Trigger.Keys"
+
+        __slots__ = ()
 
         @property
         def trigger(self):
-            return type(self).Trigger(self._factory)
+            return self.Trigger(self.__get_value__)
 
         @property
         def with_pir(self):
-            return Capability(self._keyed_factory("mdWithPir"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.with_pir, default=None),
+                bool,
+            )
 
-    @property
-    def motion_detection(self):
-        return type(self).MD(self._factory)
-
-    @property
-    def osd(self):
-        return Capability(self._keyed_factory("osd"), _INT_OSD)
-
-    @property
-    def power_led(self):
-        return Capability(self._keyed_factory("powerLed"))
-
-    class PTZ(capabilities.ChannelCapabilities.PTZ):
+    class PTZ(providers.Value[_JSONDict], capabilities.ChannelCapabilities.PTZ):
         """PTZ"""
 
-        __slots__ = ("_factory",)
+        class JSON(TypedDict):
+            """JSON"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            ptzCtrl: Capability.JSON
+            ptzDirection: Capability.JSON
+            ptzPatrol: Capability.JSON
+            ptzPreset: Capability.JSON
+            ptzTattern: Capability.JSON
+            ptzType: Capability.JSON
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+        class Keys(Protocol):
+            """Keys"""
 
-            return _factory
+            control: Final = "ptzCtrl"
+            direction: Final = "ptzDirection"
+            patrol: Final = "ptzPatrol"
+            preset: Final = "ptzPreset"
+            tattern: Final = "ptzTattern"
+            type: Final = "ptzType"
+
+        __slots__ = ()
 
         @property
         def control(self):
-            return Capability(self._keyed_factory("ptzCtrl"), _INT_PTZCONTROL)
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.control, default=None),
+                _PtzControl,
+            )
 
         @property
         def direction(self):
-            return Capability(self._keyed_factory("ptzDirection"), _INT_PTZDIRECTION)
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.direction, default=None),
+                _PtzDirection,
+            )
 
         @property
         def patrol(self):
-            return Capability(self._keyed_factory("ptzPatrol"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.patrol, default=None),
+                bool,
+            )
 
         @property
         def preset(self):
-            return Capability(self._keyed_factory("ptzPreset"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.preset, default=None),
+                bool,
+            )
 
         @property
         def tattern(self):
-            return Capability(self._keyed_factory("ptzTattern"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.tattern, default=None),
+                bool,
+            )
 
         @property
         def type(self):
-            return Capability(self._keyed_factory("ptzType"), _INT_PTZTYPE)
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.type, default=None),
+                _PtzType,
+            )
 
-    @property
-    def ptz(self):
-        return type(self).PTZ(self._factory)
-
-    class Record(capabilities.ChannelCapabilities.Record):
+    class Record(providers.Value[_JSONDict], capabilities.ChannelCapabilities.Record):
         """Record"""
 
-        __slots__ = ("_factory",)
+        class JSON(TypedDict):
+            """JSON"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            recCfg: Capability.JSON
+            recDownload: Capability.JSON
+            recReplay: Capability.JSON
+            recSchedule: Capability.JSON
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+        class Keys(Protocol):
+            """Keys"""
 
-            return _factory
+            config: Final = "recCfg"
+            download: Final = "recDownload"
+            replay: Final = "recReplay"
+            schedule: Final = "recSchedule"
+
+        __slots__ = ()
 
         @property
         def config(self):
-            return Capability(self._keyed_factory("recCfg"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.config, default=None),
+                bool,
+            )
 
         @property
         def download(self):
-            return Capability(self._keyed_factory("recDownload"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.download, default=None),
+                bool,
+            )
 
         @property
         def replay(self):
-            return Capability(self._keyed_factory("recReplay"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.replay, default=None),
+                bool,
+            )
 
         @property
         def schedule(self):
-            return Capability(self._keyed_factory("recSchedule"), _INT_RECORDSCHEDULE)
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.schedule, default=None),
+                _RecordSchedule,
+            )
 
-    @property
-    def record(self):
-        return type(self).Record(self._factory)
-
-    @property
-    def shelter_config(self):
-        return Capability(self._keyed_factory("shelterCfg"))
-
-    @property
-    def snap(self):
-        return Capability(self._keyed_factory("snap"))
-
-    class Supports(capabilities.ChannelCapabilities.Supports):
+    class Supports(providers.Value[_JSONDict], capabilities.ChannelCapabilities.Supports):
         """Supports"""
 
-        __slots__ = ("_factory",)
-
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
-
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
-
-            return _factory
-
-        class AI(capabilities.ChannelCapabilities.Supports.AI):
+        class AI(
+            providers.Value[_JSONDict],
+            capabilities.ChannelCapabilities.Supports.AI,
+        ):
             """AI"""
 
-            __slots__ = ("_factory",)
+            class JSON(TypedDict):
+                """JSON"""
 
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
+                supportAi: Capability.JSON
+                supportAiAnimal: Capability.JSON
+                supportAiDetectConfig: Capability.JSON
+                supportAiDogCat: Capability.JSON
+                supportAiFace: Capability.JSON
+                supportAiPeople: Capability.JSON
+                supportAiSensitivity: Capability.JSON
+                supportAiStayTime: Capability.JSON
+                supportAiTargetSize: Capability.JSON
+                supportAiTrackClassify: Capability.JSON
+                supportAiVehicle: Capability.JSON
+                supportAoAdjust: Capability.JSON
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
+            class Keys(Protocol):
+                """Keys"""
 
-                return _factory
+                value: Final = "supportAi"
+                animal: Final = "supportAiAnimal"
+                detect_config: Final = "supportAiDetectConfig"
+                pet: Final = "supportAiDogCat"
+                face: Final = "supportAiFace"
+                people: Final = "supportAiPeople"
+                sensitivity: Final = "supportAiSensitivity"
+                stay_time: Final = "supportAiStayTime"
+                target_size: Final = "supportAiTargetSize"
+                track_classify: Final = "supportAiTrackClassify"
+                vehicle: Final = "supportAiVehicle"
+                adjust: Final = "supportAoAdjust"
+
+            __slots__ = ()
 
             @property
             def _value(self):
-                return Capability(self._keyed_factory("supportAi"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.value, default=None),
+                    bool,
+                )
 
             def __bool__(self):
                 return self._value.__bool__()
@@ -719,339 +849,572 @@ class ChannelCapabilities(capabilities.ChannelCapabilities):
 
             @property
             def animal(self):
-                return Capability(self._keyed_factory("supportAiAnimal"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.animal, default=None),
+                    bool,
+                )
 
             @property
             def detect_config(self):
-                return Capability(self._keyed_factory("supportAiDetectConfig"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.detect_config, default=None),
+                    bool,
+                )
 
             @property
             def pet(self):
-                return Capability(self._keyed_factory("supportAiDogCat"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.pet, default=None),
+                    bool,
+                )
 
             @property
             def face(self):
-                return Capability(self._keyed_factory("supportAiFace"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.face, default=None),
+                    bool,
+                )
 
             @property
             def people(self):
-                return Capability(self._keyed_factory("supportAiPeople"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.people, default=None),
+                    bool,
+                )
 
             @property
             def sensitivity(self):
-                return Capability(self._keyed_factory("supportAiSensitivity"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.sensitivity, default=None),
+                    bool,
+                )
 
             @property
             def stay_time(self):
-                return Capability(self._keyed_factory("supportAiStayTime"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.stay_time, default=None),
+                    bool,
+                )
 
             @property
             def target_size(self):
-                return Capability(self._keyed_factory("supportAiTargetSize"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.target_size, default=None),
+                    bool,
+                )
 
             @property
             def track_classify(self):
-                return Capability(self._keyed_factory("supportAiTrackClassify"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.track_classify, default=None),
+                    bool,
+                )
 
             @property
             def vehicle(self):
-                return Capability(self._keyed_factory("supportAiVehicle"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.vehicle, default=None),
+                    bool,
+                )
 
             @property
             def adjust(self):
-                return Capability(self._keyed_factory("supportAoAdjust"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.adjust, default=None),
+                    bool,
+                )
 
-        @property
-        def ai(self):
-            return type(self).AI(self._factory)
-
-        class FloodLight(capabilities.ChannelCapabilities.Supports.FloodLight):
+        class FloodLight(
+            providers.Value[_JSONDict],
+            capabilities.ChannelCapabilities.Supports.FloodLight,
+        ):
             """FloodLight"""
 
-            __slots__ = ("_factory",)
+            class JSON(TypedDict):
+                """JSON"""
 
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
+                supportFLBrightness: Capability.JSON
+                supportFLIntelligent: Capability.JSON
+                supportFLKeepOn: Capability.JSON
+                supportFLSchedule: Capability.JSON
+                supportFLswitch: Capability.JSON
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
+            class Keys(Protocol):
+                """Keys"""
 
-                return _factory
+                brightness: Final = "supportFLBrightness"
+                intelligent: Final = "supportFLIntelligent"
+                keep_on: Final = "supportFLKeepOn"
+                schedule: Final = "supportFLSchedule"
+                switch: Final = "supportFLswitch"
+
+            __slots__ = ()
 
             @property
             def brightness(self):
-                return Capability(self._keyed_factory("supportFLBrightness"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.brightness, default=None),
+                    bool,
+                )
 
             @property
             def intelligent(self):
-                return Capability(self._keyed_factory("supportFLIntelligent"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.intelligent, default=None),
+                    bool,
+                )
 
             @property
             def keep_on(self):
-                return Capability(self._keyed_factory("supportFLKeepOn"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.keep_on, default=None),
+                    bool,
+                )
 
             @property
             def schedule(self):
-                return Capability(self._keyed_factory("supportFLSchedule"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.schedule, default=None),
+                    bool,
+                )
 
             @property
             def switch(self):
-                return Capability(self._keyed_factory("supportFLswitch"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.switch, default=None),
+                    bool,
+                )
+
+        class JSON(AI.JSON, FloodLight.JSON, TypedDict):
+            """JSON"""
+
+            supportGop: Capability.JSON
+            supportMd: Capability.JSON
+            supportPtzCheck: Capability.JSON
+            supportThresholdAdjust: Capability.JSON
+            supportWhiteDark: Capability.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            ai: "ChannelCapabilities.Supports.AI.Keys"
+            gop: Final = "supportGop"
+            flood_light: "ChannelCapabilities.Supports.FloodLight.Keys"
+            motion_detection: Final = "supportMd"
+            ptz_check: Final = "supportPtzCheck"
+            threshold_adjust: Final = "supportThresholdAdjust"
+            white_dark: Final = "supportWhiteDark"
+
+        __slots__ = ()
+
+        @property
+        def ai(self):
+            return self.AI(self.__get_value__)
 
         @property
         def flood_light(self):
-            return type(self).FloodLight(self._factory)
+            return self.FloodLight(self.__get_value__)
 
         @property
         def gop(self):
-            return Capability(self._keyed_factory("supportGop"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.gop, default=None), bool
+            )
 
         @property
         def motion_detection(self):
-            return Capability(self._keyed_factory("supportMd"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.motion_detection, default=None),
+                bool,
+            )
 
         @property
         def ptz_check(self):
-            return Capability(self._keyed_factory("supportPtzCheck"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.ptz_check, default=None),
+                bool,
+            )
 
         @property
         def threshold_adjust(self):
-            return Capability(self._keyed_factory("supportThresholdAdjust"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.threshold_adjust, default=None),
+                bool,
+            )
 
         @property
         def white_dark(self):
-            return Capability(self._keyed_factory("supportWhiteDark"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.white_dark, default=None),
+                bool,
+            )
+
+    class JSON(AI.JSON, Alarm.JSON, ISP.JSON, MD.JSON, Record.JSON, Supports.JSON, TypedDict):
+        """JSON"""
+
+        battery: Capability.JSON
+        batAnalysis: Capability.JSON
+        cameraMode: Capability.JSON
+        disableAutoFocus: Capability.JSON
+        enc: Capability.JSON
+        floodLight: Capability.JSON
+        ftp: Capability.JSON
+        image: Capability.JSON
+        indicatorLight: Capability.JSON
+        ledControl: Capability.JSON
+        live: Capability.JSON
+        mainEncType: Capability.JSON
+        mask: Capability.JSON
+        osd: Capability.JSON
+        powerLed: Capability.JSON
+        shelterCfg: Capability.JSON
+        snap: Capability.JSON
+        videoClip: Capability.JSON
+        waterMark: Capability.JSON
+        white_balance: Capability.JSON
+
+    class Keys(Protocol):
+        """Keys"""
+
+        ai: "ChannelCapabilities.AI.Keys"
+        alarm: "ChannelCapabilities.Alarm.Keys"
+        battery: Final = "battery"
+        battery_analysis: Final = "batAnalysis"
+        camera_mode: Final = "cameraMode"
+        disable_autofocus: Final = "disableAutoFocus"
+        enc: Final = "enc"
+        floodlight: Final = "floodLight"
+        ftp: Final = "ftp"
+        image: Final = "image"
+        indicator_light: Final = "indicatorLight"
+        isp: "ChannelCapabilities.ISP.Keys"
+        led_control: Final = "ledControl"
+        live: Final = "live"
+        main_encoding: Final = "mainEncType"
+        mask: Final = "mask"
+        motion_detection: "ChannelCapabilities.MD.Keys"
+        osd: Final = "osd"
+        power_led: Final = "powerLed"
+        ptz: "ChannelCapabilities.PTZ.Keys"
+        record: "ChannelCapabilities.Record.Keys"
+        shelter_config: Final = "shelterCfg"
+        snap: Final = "snap"
+        supports: "ChannelCapabilities.Supports.Keys"
+        video_clip: Final = "videoClip"
+        watermark: Final = "waterMark"
+        white_balance: Final = "white_balance"
+
+    __slots__ = ()
+
+    @property
+    def ai(self):
+        return self.AI(self.__get_value__)
+
+    @property
+    def alarm(self):
+        return self.Alarm(self.__get_value__)
+
+    @property
+    def battery(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.battery, default=None), bool
+        )
+
+    @property
+    def battery_analysis(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.battery_analysis, default=None),
+            bool,
+        )
+
+    @property
+    def camera_mode(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.camera_mode, default=None),
+            bool,
+        )
+
+    @property
+    def disable_autofocus(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.disable_autofocus, default=None),
+            bool,
+        )
+
+    @property
+    def enc(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.enc, default=None), bool
+        )
+
+    @property
+    def floodlight(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.floodlight, default=None),
+            _Floodlight,
+        )
+
+    @property
+    def ftp(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.ftp, default=None), _FTP
+        )
+
+    @property
+    def image(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.image, default=None), bool
+        )
+
+    @property
+    def indicator_light(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.indicator_light, default=None),
+            bool,
+        )
+
+    @property
+    def isp(self):
+        return self.ISP(self.__get_value__)
+
+    @property
+    def led_control(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.led_control, default=None),
+            bool,
+        )
+
+    @property
+    def live(self):
+        return Capability(self.lookup_factory(self.__get_value__, self.Keys.live), _Live)
+
+    @property
+    def main_encoding(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.main_encoding, default=None),
+            _EncodingType,
+        )
+
+    @property
+    def mask(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.mask, default=None), bool
+        )
+
+    @property
+    def motion_detection(self):
+        return self.MD(self.__get_value__)
+
+    @property
+    def osd(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.osd, default=None), _OSD
+        )
+
+    @property
+    def power_led(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.power_led, default=None), bool
+        )
+
+    @property
+    def ptz(self):
+        return self.PTZ(self.__get_value__)
+
+    @property
+    def record(self):
+        return self.Record(self.__get_value__)
+
+    @property
+    def shelter_config(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.shelter_config, default=None),
+            bool,
+        )
+
+    @property
+    def snap(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.snap, default=None), bool
+        )
 
     @property
     def supports(self):
-        return type(self).Supports(self._factory)
+        return self.Supports(self.__get_value__)
 
     @property
     def video_clip(self):
-        return Capability(self._keyed_factory("videoClip"), _INT_VIDEOCLIP)
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.video_clip, default=None),
+            _VideoClip,
+        )
 
     @property
     def watermark(self):
-        return Capability(self._keyed_factory("waterMark"))
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.watermark, default=None), bool
+        )
 
     @property
     def white_balance(self):
-        return Capability(self._keyed_factory("white_balance"))
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.white_balance, default=None),
+            bool,
+        )
 
-    def __repr__(self):
-        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
-
-class _Channels(Mapping[int, ChannelCapabilities]):
+class _Channels(providers.Value[list[_JSONDict]], Mapping[int, ChannelCapabilities]):
     """Channels"""
 
-    __slots__ = ("_factory",)
-
-    def __init__(self, factory: Callable[[], list]) -> None:
-        super().__init__()
-        self._factory = factory
+    __slots__ = ()
 
     def __getitem__(self, __k: int):
-        def _get():
-            if (_list := self._factory()) is None:
-                return None
-            return _list[__k]
-
-        return ChannelCapabilities(_get)
+        return ChannelCapabilities(self.lookup_factory(self.__get_value__, __k, default=None))
 
     def __iter__(self):
-        if (_list := self._factory()) is None:
+        if (_list := self.__get_value__()) is None:
             return
         for i in range(0, len(_list)):
             yield i
 
     def __len__(self):
-        if (_list := self._factory()) is None:
+        if (_list := self.__get_value__()) is None:
             return 0
         return len(_list)
 
-    def __repr__(self):
-        return f"<{self.__class__.__name__}: {repr(self._factory())}>"
 
-
-class Capabilities(capabilities.Capabilities):
+class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
     """Capabilities"""
 
-    __slots__ = ("_value",)
-
-    def __init__(self, value: dict) -> None:
-        super().__init__()
-        self._value = value
-
-    def _factory(self):
-        return self._value
-
-    def _keyed_factory(self, key: str):
-        def _factory() -> dict:
-            return self._value.get(key, None)
-
-        return _factory
-
-    @property
-    def three_g(self):
-        return Capability(self._keyed_factory("3g"))
-
-    @property
-    def channels(self):
-        """channels"""
-        return _Channels(self._keyed_factory("abilityChn"))
-
-    class Alarm(capabilities.Capabilities.Alarm):
+    class Alarm(providers.Value[_JSONDict], capabilities.Capabilities.Alarm):
         """Alarm"""
 
-        __slots__ = ("_factory",)
+        class HDD(providers.Value[_JSONDict], capabilities.Capabilities.Alarm.HDD):
+            """HDD"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            class JSON(TypedDict):
+                """JSON"""
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+                alarmHddErr: Capability.JSON
+                alarmHddFull: Capability.JSON
 
-            return _factory
+            class Keys(Protocol):
+                """Keys"""
 
-        @property
-        def audio(self):
-            return Capability(self._keyed_factory("alarmAudio"))
+                error: Final = "alarmHddErr"
+                full: Final = "alarmHddFull"
 
-        @property
-        def disconnect(self):
-            return Capability(self._keyed_factory("alarmDisconnet"))
-
-        class HDD(capabilities.Capabilities.Alarm.HDD):
-            """HDDD"""
-
-            __slots__ = ("_factory",)
-
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
-
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
-
-                return _factory
+            __slots__ = ()
 
             @property
             def error(self):
-                return Capability(self._keyed_factory("alarmHddErr"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.error, default=None),
+                    bool,
+                )
 
             @property
             def full(self):
-                return Capability(self._keyed_factory("alarmHddFull"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.full, default=None),
+                    bool,
+                )
+
+        class JSON(HDD.JSON):
+            """JSON"""
+
+            alarmAudio: Capability.JSON
+            alarmDisconnet: Capability.JSON
+            alarmIpConflict: Capability.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            audio: Final = "alarmAudio"
+            disconnect: Final = "alarmDisconnet"
+            hdd: "Capabilities.Alarm.HDD.Keys"
+            ip_conflict: Final = "alarmIpConflict"
+
+        __slots__ = ()
+
+        @property
+        def audio(self):
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.audio, default=None), bool
+            )
+
+        @property
+        def disconnect(self):
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.disconnect, default=None),
+                bool,
+            )
 
         @property
         def hdd(self):
-            return type(self).HDD(self._factory)
+            return self.HDD(self.__get_value__)
 
         @property
         def ip_conflict(self):
-            return Capability(self._keyed_factory("alarmIpConflict"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.ip_conflict, default=None),
+                bool,
+            )
 
-    @property
-    def alarm(self):
-        return type(self).Alarm(self._factory)
-
-    @property
-    def auth(self):
-        return Capability(self._keyed_factory("auth"))
-
-    @property
-    def auto_maintenance(self):
-        return Capability(self._keyed_factory("autoMaint"))
-
-    @property
-    def cloud_storage(self):
-        return Capability(self._keyed_factory("cloudStorage"), _INT_CLOUDSTORAGE)
-
-    @property
-    def custom_audio(self):
-        return Capability(self._keyed_factory("customAudio"))
-
-    @property
-    def date_format(self):
-        return Capability(self._keyed_factory("dateFormat"))
-
-    @property
-    def ddns(self):
-        return Capability(self._keyed_factory("ddns"), _INT_DDNS)
-
-    class Device(capabilities.Capabilities.Device):
+    class Device(providers.Value[_JSONDict], capabilities.Capabilities.Device):
         """Device"""
 
-        __slots__ = ("_factory",)
+        class JSON(TypedDict):
+            """JSON"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            devInfo: Capability.JSON
+            devName: Capability.JSON
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+        class Keys(Protocol):
+            """Keys"""
 
-            return _factory
+            info: Final = "devInfo"
+            name: Final = "devName"
+
+        __slots__ = ()
 
         @property
         def info(self):
-            return Capability(self._keyed_factory("devInfo"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.info, default=None), bool
+            )
 
         @property
         def name(self):
-            return Capability(self._keyed_factory("devName"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.name, default=None), bool
+            )
 
-    @property
-    def device(self):
-        return type(self).Device(self._factory)
-
-    @property
-    def disable_autofocus(self):
-        return Capability(self._keyed_factory("disableAutoFocus"))
-
-    @property
-    def disk(self):
-        return Capability(self._keyed_factory("disk"))
-
-    @property
-    def display(self):
-        return Capability(self._keyed_factory("display"))
-
-    class Email(capabilities.Capabilities.Email):
+    class Email(providers.Value[_JSONDict], capabilities.Capabilities.Email):
         """Email"""
 
-        __slots__ = ("_factory",)
+        class JSON(TypedDict):
+            """JSON"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            email: Capability.JSON
+            emailInterval: Capability.JSON
+            emailSchedule: Capability.JSON
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+        class Keys(Protocol):
+            """Keys"""
 
-            return _factory
+            value: Final = "email"
+            interval: Final = "emailInterval"
+            schedule: Final = "emailSchedule"
+
+        __slots__ = ()
 
         @property
         def _value(self):
-            return Capability(self._keyed_factory("email"), _INT_EMAIL)
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.value, default=None),
+                _Email,
+            )
 
         @property
         def value(self):
@@ -1066,263 +1429,182 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def interval(self):
-            return Capability(self._keyed_factory("emailInterval"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.interval, default=None),
+                bool,
+            )
 
         @property
         def schedule(self):
-            return Capability(self._keyed_factory("emailSchedule"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.schedule, default=None),
+                bool,
+            )
 
-    @property
-    def email(self):
-        return type(self).Email(self._factory)
-
-    @property
-    def config_import(self):
-        return Capability(self._keyed_factory("importCfg"))
-
-    @property
-    def config_export(self):
-        return Capability(self._keyed_factory("exportCfg"))
-
-    class FTP(capabilities.Capabilities.FTP):
+    class FTP(providers.Value[_JSONDict], capabilities.Capabilities.FTP):
         """FTP"""
 
-        __slots__ = ("_factory",)
-
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
-
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
-
-            return _factory
-
-        @property
-        def auto_dir(self):
-            return Capability(self._keyed_factory("ftpAutoDir"))
-
-        class Stream(capabilities.Capabilities.FTP.Stream):
+        class Stream(providers.Value[_JSONDict], capabilities.Capabilities.FTP.Stream):
             """Stream"""
 
-            __slots__ = ("_factory",)
+            class JSON(TypedDict):
+                """JSON"""
 
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
+                ftpExtStream: Capability.JSON
+                ftpSubStream: Capability.JSON
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
+            class Keys(Protocol):
+                """Keys"""
 
-                return _factory
+                ext: Final = "ftpExtStream"
+                sub: Final = "ftpSubStream"
+
+            __slots__ = ()
 
             @property
             def ext(self):
-                return Capability(self._keyed_factory("ftpExtStream"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.ext, default=None),
+                    bool,
+                )
 
             @property
             def sub(self):
-                return Capability(self._keyed_factory("ftpSubStream"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.sub, default=None),
+                    bool,
+                )
+
+        class JSON(Stream.JSON):
+            """JSON"""
+
+            ftpAutoDir: Capability.JSON
+            ftpPic: Capability.JSON
+            ftpTest: Capability.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            stream: "Capabilities.FTP.Stream.Keys"
+            auto_dir: Final = "ftpAutoDir"
+            picture: Final = "ftpPic"
+            test: Final = "ftpTest"
+
+        __slots__ = ()
+
+        @property
+        def auto_dir(self):
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.auto_dir, default=None),
+                bool,
+            )
 
         @property
         def stream(self):
-            return type(self).Stream(self._factory)
+            return self.Stream(self.__get_value__)
 
         @property
         def picture(self):
-            return Capability(self._keyed_factory("ftpPic"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.picture, default=None),
+                bool,
+            )
 
         @property
         def test(self):
-            return Capability(self._keyed_factory("ftpTest"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.test, default=None), bool
+            )
 
-    @property
-    def ftp(self):
-        return type(self).FTP(self._factory)
-
-    @property
-    def hour_format(self):
-        """change hour format supported"""
-
-        return Capability(self._keyed_factory("hourFmt"))
-
-    @property
-    def http(self):
-        return Capability(self._keyed_factory("http"))
-
-    @property
-    def http_flv(self):
-        return Capability(self._keyed_factory("httpFlv"))
-
-    @property
-    def https(self):
-        return Capability(self._keyed_factory("https"))
-
-    @property
-    def ipc_manager(self):
-        return Capability(self._keyed_factory("ipcManager"))
-
-    @property
-    def led_control(self):
-        return Capability(self._keyed_factory("ledControl"))
-
-    @property
-    def local_link(self):
-        return Capability(self._keyed_factory("localLink"))
-
-    @property
-    def log(self):
-        return Capability(self._keyed_factory("log"))
-
-    @property
-    def media_port(self):
-        return Capability(self._keyed_factory("mediaPort"))
-
-    @property
-    def ntp(self):
-        return Capability(self._keyed_factory("ntp"))
-
-    @property
-    def online(self):
-        return Capability(self._keyed_factory("online"))
-
-    @property
-    def onvif(self):
-        return Capability(self._keyed_factory("onvif"))
-
-    @property
-    def p2p(self):
-        return Capability(self._keyed_factory("p2p"))
-
-    @property
-    def performance(self):
-        return Capability(self._keyed_factory("performance"))
-
-    @property
-    def pppoe(self):
-        return Capability(self._keyed_factory("pppoe"))
-
-    @property
-    def push(self):
-        return Capability(self._keyed_factory("push"))
-
-    @property
-    def push_schedule(self):
-        return Capability(self._keyed_factory("pushSchedule"))
-
-    @property
-    def reboot(self):
-        return Capability(self._keyed_factory("reboot"))
-
-    class Record(capabilities.Capabilities.Record):
+    class Record(providers.Value[_JSONDict], capabilities.Capabilities.Record):
         """Record"""
 
-        __slots__ = ("_factory",)
+        class JSON(TypedDict):
+            """JSON"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            recExtensionTimeList: Capability.JSON
+            recOverWrite: Capability.JSON
+            recPackDuration: Capability.JSON
+            recPreRecord: Capability.JSON
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+        class Keys(Protocol):
+            """Keys"""
 
-            return _factory
+            extension_time_list: Final = "recExtensionTimeList"
+            overwrite: Final = "recOverWrite"
+            pack_duration: Final = "recPackDuration"
+            pre_record: Final = "recPreRecord"
+
+        __slots__ = ()
 
         @property
         def extension_time_list(self):
-            return Capability(self._keyed_factory("recExtensionTimeList"))
+            return Capability(
+                self.lookup_factory(
+                    self.__get_value__, self.Keys.extension_time_list, default=None
+                ),
+                bool,
+            )
 
         @property
         def overwrite(self):
-            return Capability(self._keyed_factory("recOverWrite"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.overwrite, default=None),
+                bool,
+            )
 
         @property
         def pack_duration(self):
-            return Capability(self._keyed_factory("recPackDuration"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.pack_duration, default=None),
+                bool,
+            )
 
         @property
         def pre_record(self):
-            return Capability(self._keyed_factory("recPreRecord"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.pre_record, default=None),
+                bool,
+            )
 
-    @property
-    def record(self):
-        return type(self).Record(self._factory)
-
-    @property
-    def restore(self):
-        return Capability(self._keyed_factory("restore"))
-
-    @property
-    def rtmp(self):
-        return Capability(self._keyed_factory("rtmp"))
-
-    @property
-    def rtsp(self):
-        return Capability(self._keyed_factory("rtsp"))
-
-    @property
-    def schedule_version(self):
-        return Capability(self._keyed_factory("scheduleVersion"), _INT_SCHEDULEVERSION)
-
-    @property
-    def sd_card(self):
-        return Capability(self._keyed_factory("sdCard"))
-
-    @property
-    def show_qr_code(self):
-        return Capability(self._keyed_factory("showQrCode"))
-
-    @property
-    def sim_module(self):
-        return Capability(self._keyed_factory("simModule"))
-
-    class Supports(capabilities.Capabilities.Supports):
+    class Supports(providers.Value[_JSONDict], capabilities.Capabilities.Supports):
         """Supports"""
 
-        __slots__ = ("_factory",)
-
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
-
-        class Audio(capabilities.Capabilities.Supports.Audio):
+        class Audio(providers.Value[_JSONDict], capabilities.Capabilities.Supports.Audio):
             """Audio"""
 
-            __slots__ = ("_factory",)
-
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
-
-            class Alarm(capabilities.Capabilities.Supports.Audio.Alarm):
+            class Alarm(
+                providers.Value[_JSONDict],
+                capabilities.Capabilities.Supports.Audio.Alarm,
+            ):
                 """Alarm"""
 
-                __slots__ = ("_factory",)
+                class JSON(TypedDict):
+                    """JSON"""
 
-                def __init__(self, factory: Callable[[], dict]) -> None:
-                    super().__init__()
-                    self._factory = factory
+                    supportAudioAlarm: Capability.JSON
+                    supportAudioAlarmEnable: Capability.JSON
+                    supportAudioAlarmSchedule: Capability.JSON
+                    supportAudioAlarmTaskEnable: Capability.JSON
 
-                def _keyed_factory(self, key: str):
-                    def _factory() -> dict:
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get(key, None)
+                class Keys(Protocol):
+                    """Keys"""
 
-                    return _factory
+                    value: Final = "supportAudioAlarm"
+                    enable: Final = "supportAudioAlarmEnable"
+                    schedule: Final = "supportAudioAlarmSchedule"
+                    task_enable: Final = "supportAudioAlarmTaskEnable"
+
+                __slots__ = ()
+
+                _provided_value: JSON
 
                 @property
                 def _value(self):
-                    return Capability(self._keyed_factory("supportAudioAlarm"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.value, default=None),
+                        bool,
+                    )
 
                 @property
                 def value(self):
@@ -1333,57 +1615,80 @@ class Capabilities(capabilities.Capabilities):
                     return self._value.permissions
 
                 def __bool__(self):
-                    return bool(self.value)
+                    return self.value
 
                 @property
                 def enable(self):
-                    return Capability(self._keyed_factory("supportAudioAlarmEnable"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.enable, default=None),
+                        bool,
+                    )
 
                 @property
                 def schedule(self):
-                    return Capability(self._keyed_factory("supportAudioAlarmSchedule"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.schedule, default=None),
+                        bool,
+                    )
 
                 @property
                 def task_enable(self):
-                    return Capability(self._keyed_factory("supportAudioAlarmTaskEnable"))
+                    return Capability(
+                        self.lookup_factory(
+                            self.__get_value__, self.Keys.task_enable, default=None
+                        ),
+                        bool,
+                    )
+
+            class JSON(Alarm.JSON):
+                """JSON"""
+
+            class Keys(Protocol):
+                """Keys"""
+
+                alarm: "Capabilities.Supports.Audio.Alarm.Keys"
+
+            __slots__ = ()
+
+            _provided_value: JSON
 
             @property
             def alarm(self):
-                return type(self).Alarm(self._factory)
+                return self.Alarm(self.__get_value__)
 
-        @property
-        def audio(self):
-            return type(self).Audio(self._factory)
-
-        class Buzzer(capabilities.Capabilities.Supports.Buzzer):
+        class Buzzer(providers.Value[_JSONDict], capabilities.Capabilities.Supports.Buzzer):
             """Buzzer"""
 
-            __slots__ = ("_factory",)
+            __slots__ = ()
 
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
-
-            class Task(capabilities.Capabilities.Supports.Buzzer.Task):
+            class Task(
+                providers.Value[_JSONDict],
+                capabilities.Capabilities.Supports.Buzzer.Task,
+            ):
                 """Task"""
 
-                __slots__ = ("_factory",)
+                class JSON(TypedDict):
+                    """JSON"""
 
-                def __init__(self, factory: Callable[[], dict]) -> None:
-                    super().__init__()
-                    self._factory = factory
+                    supportBuzzerTask: Capability.JSON
+                    supportBuzzerEnable: Capability.JSON
 
-                def _keyed_factory(self, key: str):
-                    def _factory() -> dict:
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get(key, None)
+                class Keys(Protocol):
+                    """Keys"""
 
-                    return _factory
+                    value: Final = "supportBuzzerTask"
+                    enable: Final = "supportBuzzerEnable"
+
+                __slots__ = ()
+
+                _provided_value: JSON
 
                 @property
                 def _value(self):
-                    return Capability(self._keyed_factory("supportBuzzerTask"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.value, default=None),
+                        bool,
+                    )
 
                 @property
                 def value(self):
@@ -1394,27 +1699,37 @@ class Capabilities(capabilities.Capabilities):
                     return self._value.permissions
 
                 def __bool__(self):
-                    return bool(self.value)
+                    return self.value
 
                 @property
                 def enable(self):
-                    return Capability(self._keyed_factory("supportBuzzerEnable"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.enable, default=None),
+                        bool,
+                    )
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
+            class JSON(Task.JSON):
+                """JSON"""
 
-                return _factory
+                supportBuzzer: Capability.JSON
+
+            class Keys(Protocol):
+                """Keys"""
+
+                task: "Capabilities.Supports.Buzzer.Task.Keys"
+                value: Final = "supportBuzzer"
+
+            __slots__ = ()
 
             @property
             def _value(self):
-                return Capability(self._keyed_factory("supportBuzzer"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.value, default=None), bool
+                )
 
             @property
             def task(self):
-                return type(self).Task(self._factory)
+                return self.Task(self.__get_value__)
 
             @property
             def value(self):
@@ -1426,146 +1741,143 @@ class Capabilities(capabilities.Capabilities):
                 """permissions"""
                 return self._value.permissions
 
-        @property
-        def buzzer(self):
-            return type(self).Buzzer(self._factory)
-
-        class Email(capabilities.Capabilities.Supports.Email):
+        class Email(providers.Value[_JSONDict], capabilities.Capabilities.Supports.Email):
             """Email"""
 
-            __slots__ = ("_factory",)
+            class JSON(TypedDict):
+                """JSON"""
 
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
+                supportEmailEnable: Capability.JSON
+                supportEmailTaskEnable: Capability.JSON
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
+            class Keys(Protocol):
+                """Keys"""
 
-                return _factory
+                enable: Final = "supportEmailEnable"
+                task_enable: Final = "supportEmailTaskEnable"
+
+            __slots__ = ()
 
             @property
             def enable(self):
-                return Capability(self._keyed_factory("supportEmailEnable"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.enable, default=None),
+                    bool,
+                )
 
             @property
             def task_enable(self):
-                return Capability(self._keyed_factory("supportEmailTaskEnable"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.task_enable),
+                    bool,
+                )
 
-        @property
-        def email(self):
-            return type(self).Email(self._factory)
-
-        class FTP(capabilities.Capabilities.Supports.FTP):
+        class FTP(providers.Value[_JSONDict], capabilities.Capabilities.Supports.FTP):
             """FTP"""
 
-            __slots__ = ("_factory",)
-
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
-
-            class Cover(capabilities.Capabilities.Supports.FTP.Cover):
+            class Cover(
+                providers.Value[_JSONDict],
+                capabilities.Capabilities.Supports.FTP.Cover,
+            ):
                 """Cover"""
 
-                __slots__ = ("_factory",)
+                class JSON(TypedDict):
+                    """JSON"""
 
-                def __init__(self, factory: Callable[[], dict]) -> None:
-                    super().__init__()
-                    self._factory = factory
+                    supportFtpCoverPicture: Capability.JSON
+                    supportFtpCoverVideo: Capability.JSON
 
-                def _keyed_factory(self, key: str):
-                    def _factory() -> dict:
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get(key, None)
+                class Keys(Protocol):
+                    """Keys"""
 
-                    return _factory
+                    picture: Final = "supportFtpCoverPicture"
+                    video: Final = "supportFtpCoverVideo"
+
+                __slots__ = ()
 
                 @property
                 def picture(self):
-                    return Capability(self._keyed_factory("supportFtpCoverPicture"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.picture),
+                        bool,
+                    )
 
                 @property
                 def video(self):
-                    return Capability(self._keyed_factory("supportFtpCoverVideo"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.video),
+                        bool,
+                    )
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
-
-                return _factory
-
-            @property
-            def cover(self):
-                return type(self).Cover(self._factory)
-
-            @property
-            def dir_YM(self):
-                return Capability(self._keyed_factory("supportFtpDirYM"))
-
-            @property
-            def enable(self):
-                return Capability(self._keyed_factory("supportFtpEnable"))
-
-            class Picture(capabilities.Capabilities.Supports.FTP.Picture):
+            class Picture(
+                providers.Value[_JSONDict],
+                capabilities.Capabilities.Supports.FTP.Picture,
+            ):
                 """Picture"""
 
-                __slots__ = ("_factory",)
+                class JSON(TypedDict):
+                    """JSON"""
 
-                def __init__(self, factory: Callable[[], dict]) -> None:
-                    super().__init__()
-                    self._factory = factory
+                    supportFtpPicCaptureMode: Capability.JSON
+                    supportFtpPicResoCustom: Capability.JSON
+                    supportFtpPictureSwap: Capability.JSON
 
-                def _keyed_factory(self, key: str):
-                    def _factory() -> dict:
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get(key, None)
+                class Keys(Protocol):
+                    """Keys"""
 
-                    return _factory
+                    capture_mode: Final = "supportFtpPicCaptureMode"
+                    custom_resolution: Final = "supportFtpPicResoCustom"
+                    swap: Final = "supportFtpPictureSwap"
+
+                __slots__ = ()
 
                 @property
                 def capture_mode(self):
-                    return Capability(self._keyed_factory("supportFtpPicCaptureMode"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.capture_mode),
+                        bool,
+                    )
 
                 @property
                 def custom_resolution(self):
-                    return Capability(self._keyed_factory("supportFtpPicResoCustom"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.custom_resolution),
+                        bool,
+                    )
 
                 @property
                 def swap(self):
-                    return Capability(self._keyed_factory("supportFtpPictureSwap"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.swap),
+                        bool,
+                    )
 
-            @property
-            def picture(self):
-                return type(self).Picture(self._factory)
-
-            class Task(capabilities.Capabilities.Supports.FTP.Task):
+            class Task(
+                providers.Value[_JSONDict],
+                capabilities.Capabilities.Supports.FTP.Task,
+            ):
                 """Task"""
 
-                __slots__ = ("_factory",)
+                class JSON(TypedDict):
+                    """JSON"""
 
-                def __init__(self, factory: Callable[[], dict]) -> None:
-                    super().__init__()
-                    self._factory = factory
+                    supportFtpTask: Capability.JSON
+                    supportFtpTaskEnable: Capability.JSON
 
-                def _keyed_factory(self, key: str):
-                    def _factory() -> dict:
-                        if (value := self._factory()) is None:
-                            return None
-                        return value.get(key, None)
+                class Keys(Protocol):
+                    """Keys"""
 
-                    return _factory
+                    value: Final = "supportFtpTask"
+                    enable: Final = "supportFtpTaskEnable"
+
+                __slots__ = ()
 
                 @property
                 def _value(self):
-                    return Capability(self._keyed_factory("supportFtpTask"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.value),
+                        bool,
+                    )
 
                 @property
                 def value(self):
@@ -1580,145 +1892,215 @@ class Capabilities(capabilities.Capabilities):
 
                 @property
                 def enable(self):
-                    return Capability(self._keyed_factory("supportFtpTaskEnable"))
+                    return Capability(
+                        self.lookup_factory(self.__get_value__, self.Keys.enable),
+                        bool,
+                    )
 
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
+            class JSON(Cover.JSON, Picture.JSON, Task.JSON):
+                """JSON"""
 
-                return _factory
+                supportFtpDirYM: Capability.JSON
+                supportFtpEnable: Capability.JSON
+                supportFtpVideoSwap: Capability.JSON
+                supportFtpsEncrypt: Capability.JSON
 
-            @property
-            def task(self):
-                return type(self).Task(self._factory)
+            class Keys(Protocol):
+                """Keys"""
 
-            @property
-            def video_swap(self):
-                return Capability(self._keyed_factory("supportFtpVideoSwap"))
+                cover: "Capabilities.Supports.FTP.Cover.Keys"
+                dir_YM: Final = "supportFtpDirYM"
+                enable: Final = "supportFtpEnable"
+                picture: "Capabilities.Supports.FTP.Picture.Keys"
+                task: "Capabilities.Supports.FTP.Task.Keys"
+                video_swap: Final = "supportFtpVideoSwap"
+                ftps_encrypt: Final = "supportFtpsEncrypt"
 
-            @property
-            def ftps_encrypt(self):
-                return Capability(self._keyed_factory("supportFtpsEncrypt"))
-
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
-
-            return _factory
-
-        @property
-        def ftp(self):
-            return type(self).FTP(self._factory)
-
-        @property
-        def http_enable(self):
-            return Capability(self._keyed_factory("supportHttpEnable"))
-
-        @property
-        def https_enable(self):
-            return Capability(self._keyed_factory("supportHttpsEnable"))
-
-        @property
-        def onvif_enable(self):
-            return Capability(self._keyed_factory("supportOnvifEnable"))
-
-        @property
-        def push_interval(self):
-            return Capability(self._keyed_factory("supportPushInterval"))
-
-        class Record(capabilities.Capabilities.Supports.Record):
-            """Record"""
-
-            __slots__ = ("_factory",)
-
-            def __init__(self, factory: Callable[[], dict]) -> None:
-                super().__init__()
-                self._factory = factory
-
-            def _keyed_factory(self, key: str):
-                def _factory() -> dict:
-                    if (value := self._factory()) is None:
-                        return None
-                    return value.get(key, None)
-
-                return _factory
+            __slots__ = ()
 
             @property
-            def schedule_enable(self):
-                return Capability(self._keyed_factory("supportRecScheduleEnable"))
+            def cover(self):
+                return self.Cover(self._factory)
+
+            @property
+            def dir_YM(self):
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.dir_YM),
+                    bool,
+                )
 
             @property
             def enable(self):
-                return Capability(self._keyed_factory("supportRecordEnable"))
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.enable),
+                    bool,
+                )
+
+            @property
+            def picture(self):
+                return self.Picture(self.__get_value__)
+
+            @property
+            def task(self):
+                return self.Task(self.__get_value__)
+
+            @property
+            def video_swap(self):
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.video_swap),
+                    bool,
+                )
+
+            @property
+            def ftps_encrypt(self):
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.ftps_encrypt),
+                    bool,
+                )
+
+        class Record(providers.Value[_JSONDict], capabilities.Capabilities.Supports.Record):
+            """Record"""
+
+            class JSON(TypedDict):
+                """JSON"""
+
+                supportRecScheduleEnable: Capability.JSON
+                supportRecordEnable: Capability.JSON
+
+            class Keys(Protocol):
+                """Keys"""
+
+                schedule_enable: Final = "supportRecScheduleEnable"
+                enable: Final = "supportRecordEnable"
+
+            __slots__ = ()
+
+            @property
+            def schedule_enable(self):
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.schedule_enable),
+                    bool,
+                )
+
+            @property
+            def enable(self):
+                return Capability(
+                    self.lookup_factory(self.__get_value__, self.Keys.enable),
+                    bool,
+                )
+
+        class JSON(Audio.JSON, Buzzer.JSON, Email.JSON, FTP.JSON, Record.JSON):
+            """JSON"""
+
+            supportHttpEnable: Capability.JSON
+            supportHttpsEnable: Capability.JSON
+            supportOnvifEnable: Capability.JSON
+            supportPushInterval: Capability.JSON
+            supportRtmpEnable: Capability.JSON
+            supportRtspEnable: Capability.JSON
+
+        class Keys(Protocol):
+            """Keys"""
+
+            audio: "Capabilities.Supports.Audio.Keys"
+            buzzer: "Capabilities.Supports.Buzzer.Keys"
+            email: "Capabilities.Supports.Email.Keys"
+            ftp: "Capabilities.Supports.FTP.Keys"
+            record: "Capabilities.Supports.Record.Keys"
+
+            http_enable: Final = "supportHttpEnable"
+            https_enable: Final = "supportHttpsEnable"
+            onvif_enable: Final = "supportOnvifEnable"
+            push_interval: Final = "supportPushInterval"
+            rtmp_enable: Final = "supportRtmpEnable"
+            rtsp_enable: Final = "supportRtspEnable"
+
+        __slots__ = ()
+
+        @property
+        def audio(self):
+            return self.Audio(self.__get_value__)
+
+        @property
+        def buzzer(self):
+            return self.Buzzer(self.__get_value__)
+
+        @property
+        def email(self):
+            return self.Email(self.__get_value__)
+
+        @property
+        def ftp(self):
+            return self.FTP(self.__get_value__)
+
+        @property
+        def http_enable(self):
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.http_enable),
+                bool,
+            )
+
+        @property
+        def https_enable(self):
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.https_enable),
+                bool,
+            )
+
+        @property
+        def onvif_enable(self):
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.onvif_enable),
+                bool,
+            )
+
+        @property
+        def push_interval(self):
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.push_interval),
+                bool,
+            )
 
         @property
         def record(self):
-            return type(self).Record(self._factory)
+            return self.Record(self.__get_value__)
 
         @property
         def rtmp_enable(self):
-            return Capability(self._keyed_factory("supportRtmpEnable"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.rtmp_enable),
+                bool,
+            )
 
         @property
         def rtsp_enable(self):
-            return Capability(self._keyed_factory("supportRtspEnable"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.rtsp_enable),
+                bool,
+            )
 
-    @property
-    def supports(self):
-        return type(self).Supports(self._factory)
-
-    @property
-    def talk(self):
-        return Capability(self._keyed_factory("talk"))
-
-    @property
-    def time(self):
-        return Capability(self._keyed_factory("time"), _INT_TIME)
-
-    @property
-    def tv_system(self):
-        return Capability(self._keyed_factory("tvSystem"))
-
-    @property
-    def upgrade(self):
-        return Capability(self._keyed_factory("upgrade"), _INT_UPGRADE)
-
-    @property
-    def upnp(self):
-        return Capability(self._keyed_factory("upnp"))
-
-    @property
-    def user(self):
-        return Capability(self._keyed_factory("user"))
-
-    @property
-    def video_clip(self):
-        return Capability(self._keyed_factory("videoClip"), _INT_VIDEOCLIP)
-
-    class Wifi(capabilities.Capabilities.Wifi):
+    class Wifi(providers.Value[_JSONDict], capabilities.Capabilities.Wifi):
         """WIFI"""
 
-        __slots__ = ("_factory",)
+        class JSON(TypedDict):
+            """JSON"""
 
-        def __init__(self, factory: Callable[[], dict]) -> None:
-            super().__init__()
-            self._factory = factory
+            wifi: Capability.JSON
+            wifiTest: Capability.JSON
 
-        def _keyed_factory(self, key: str):
-            def _factory() -> dict:
-                if (value := self._factory()) is None:
-                    return None
-                return value.get(key, None)
+        class Keys(Protocol):
+            """Keys"""
 
-            return _factory
+            value: Final = "wifi"
+            testable: Final = "wifiTest"
+
+        __slots__ = ()
 
         @property
         def _value(self):
-            return Capability(self._keyed_factory("wifi"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.value, default=None), bool
+            )
 
         @property
         def value(self):
@@ -1733,18 +2115,437 @@ class Capabilities(capabilities.Capabilities):
 
         @property
         def testable(self):
-            return Capability(self._keyed_factory("wifiTest"))
+            return Capability(
+                self.lookup_factory(self.__get_value__, self.Keys.testable),
+                bool,
+            )
+
+    _BaseJSON = TypedDict("_BaseJSON", {"3g": Capability.JSON})
+
+    class JSON(_BaseJSON, Alarm.JSON, Device.JSON, Email.JSON, FTP.JSON, Wifi.JSON):
+        """JSON"""
+
+        abilityChn: list[ChannelCapabilities.JSON]
+        auth: Capability.JSON
+        autoMaint: Capability.JSON
+        cloudStorage: Capability.JSON
+        dateFormat: Capability.JSON
+        ddns: Capability.JSON
+        disableAutoFocus: Capability.JSON
+        disk: Capability.JSON
+        display: Capability.JSON
+        importCfg: Capability.JSON
+        exportCfg: Capability.JSON
+        hourFmt: Capability.JSON
+        http: Capability.JSON
+        httpFlv: Capability.JSON
+        https: Capability.JSON
+        ipcManager: Capability.JSON
+        ledControl: Capability.JSON
+        localLink: Capability.JSON
+        log: Capability.JSON
+        mediaPort: Capability.JSON
+        ntp: Capability.JSON
+        online: Capability.JSON
+        onvif: Capability.JSON
+        p2p: Capability.JSON
+        performance: Capability.JSON
+        pppoe: Capability.JSON
+        push: Capability.JSON
+        pushSchedule: Capability.JSON
+        reboot: Capability.JSON
+        restore: Capability.JSON
+        rtmp: Capability.JSON
+        rtsp: Capability.JSON
+        scheduleVersion: Capability.JSON
+        sdCard: Capability.JSON
+        showQrCode: Capability.JSON
+        simModule: Capability.JSON
+        talk: Capability.JSON
+        time: Capability.JSON
+        tvSystem: Capability.JSON
+        upgrade: Capability.JSON
+        upnp: Capability.JSON
+        user: Capability.JSON
+        videoClip: Capability.JSON
+
+    class Keys(Protocol):
+        """Keys"""
+
+        alarm: "Capabilities.Alarm.Keys"
+        device: "Capabilities.Device.Keys"
+        email: "Capabilities.Email.Keys"
+        ftp: "Capabilities.FTP.Keys"
+        wifi: "Capabilities.Wifi.Keys"
+
+        three_g: Final = "3g"
+        channels: Final = "abilityChn"
+        auth: Final = "auth"
+        auto_maintenance: Final = "autoMaint"
+        cloud_storage: Final = "cloudStorage"
+        date_format: Final = "dateFormat"
+        ddns: Final = "ddns"
+        disable_autofocus: Final = "disableAutoFocus"
+        disk: Final = "disk"
+        display: Final = "display"
+        config_import: Final = "importCfg"
+        config_export: Final = "exportCfg"
+        hour_format: Final = "hourFmt"
+        http: Final = "http"
+        http_flv: Final = "httpFlv"
+        https: Final = "https"
+        ipc_manager: Final = "ipcManager"
+        led_control: Final = "ledControl"
+        local_link: Final = "localLink"
+        log: Final = "log"
+        media_port: Final = "mediaPort"
+        ntp: Final = "ntp"
+        online: Final = "online"
+        onvif: Final = "onvif"
+        p2p: Final = "p2p"
+        performance: Final = "performance"
+        pppoe: Final = "pppoe"
+        push: Final = "push"
+        push_schedule: Final = "pushSchedule"
+        reboot: Final = "reboot"
+        restore: Final = "restore"
+        rtmp: Final = "rtmp"
+        rtsp: Final = "rtsp"
+        schedule_version: Final = "scheduleVersion"
+        sd_card: Final = "sdCard"
+        show_qr_code: Final = "showQrCode"
+        sim_module: Final = "simModule"
+        talk: Final = "talk"
+        time: Final = "time"
+        tv_system: Final = "tvSystem"
+        upgrade: Final = "upgrade"
+        upnp: Final = "upnp"
+        user: Final = "user"
+        video_clip: Final = "videoClip"
+
+    __slots__ = ()
+
+    @property
+    def three_g(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.three_g, default=None), bool
+        )
+
+    @property
+    def channels(self):
+        """channels"""
+        return _Channels(self.lookup_factory(self.__get_value__, self.Keys.channels))
+
+    @property
+    def alarm(self):
+        return self.Alarm(self.__get_value__)
+
+    @property
+    def auth(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.auth, default=None), bool
+        )
+
+    @property
+    def auto_maintenance(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.auto_maintenance),
+            bool,
+        )
+
+    @property
+    def cloud_storage(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.cloud_storage),
+            _CloudStorage,
+        )
+
+    @property
+    def custom_audio(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.custom_audio),
+            bool,
+        )
+
+    @property
+    def date_format(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.date_format),
+            bool,
+        )
+
+    @property
+    def ddns(self):
+        return Capability(self.lookup_factory(self.__get_value__, self.Keys.ddns), _DDns)
+
+    @property
+    def device(self):
+        return self.Device(self.__get_value__)
+
+    @property
+    def disable_autofocus(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.disable_autofocus),
+            bool,
+        )
+
+    @property
+    def disk(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.disk, default=None), bool
+        )
+
+    @property
+    def display(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.display, default=None), bool
+        )
+
+    @property
+    def email(self):
+        return self.Email(self.__get_value__)
+
+    @property
+    def config_import(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.config_import),
+            bool,
+        )
+
+    @property
+    def config_export(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.config_export),
+            bool,
+        )
+
+    @property
+    def ftp(self):
+        return self.FTP(self.__get_value__)
+
+    @property
+    def hour_format(self):
+        """change hour format supported"""
+
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.hour_format),
+            bool,
+        )
+
+    @property
+    def http(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.http, default=None), bool
+        )
+
+    @property
+    def http_flv(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.http_flv, default=None), bool
+        )
+
+    @property
+    def https(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.https, default=None), bool
+        )
+
+    @property
+    def ipc_manager(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.ipc_manager),
+            bool,
+        )
+
+    @property
+    def led_control(self):
+        ledControl: Capability.JSON
+        led_control: Final = "ledControl"
+        return Capability(self.lookup_factory(self.__get_value__, led_control, default=None), bool)
+
+    @property
+    def local_link(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.local_link),
+            bool,
+        )
+
+    @property
+    def log(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.log, default=None), bool
+        )
+
+    @property
+    def media_port(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.media_port),
+            bool,
+        )
+
+    @property
+    def ntp(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.ntp, default=None), bool
+        )
+
+    @property
+    def online(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.online, default=None), bool
+        )
+
+    @property
+    def onvif(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.onvif, default=None), bool
+        )
+
+    @property
+    def p2p(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.p2p, default=None), bool
+        )
+
+    @property
+    def performance(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.performance),
+            bool,
+        )
+
+    @property
+    def pppoe(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.pppoe, default=None), bool
+        )
+
+    @property
+    def push(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.push, default=None), bool
+        )
+
+    @property
+    def push_schedule(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.push_schedule),
+            bool,
+        )
+
+    @property
+    def reboot(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.reboot, default=None), bool
+        )
+
+    @property
+    def record(self):
+        return self.Record(self.__get_value__)
+
+    @property
+    def restore(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.restore, default=None), bool
+        )
+
+    @property
+    def rtmp(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.rtmp, default=None), bool
+        )
+
+    @property
+    def rtsp(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.rtsp, default=None), bool
+        )
+
+    @property
+    def schedule_version(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.schedule_version),
+            _ScheduleVersion,
+        )
+
+    @property
+    def sd_card(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.sd_card, default=None), bool
+        )
+
+    @property
+    def show_qr_code(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.show_qr_code),
+            bool,
+        )
+
+    @property
+    def sim_module(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.sim_module),
+            bool,
+        )
+
+    @property
+    def supports(self):
+        return self.Supports(self.__get_value__)
+
+    @property
+    def talk(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.talk, default=None), bool
+        )
+
+    @property
+    def time(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.time, default=None), _Time
+        )
+
+    @property
+    def tv_system(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.tv_system, default=None), bool
+        )
+
+    @property
+    def upgrade(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.upgrade, default=None),
+            _Upgrade,
+        )
+
+    @property
+    def upnp(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.upnp, default=None), bool
+        )
+
+    @property
+    def user(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.user, default=None), bool
+        )
+
+    @property
+    def video_clip(self):
+        return Capability(
+            self.lookup_factory(self.__get_value__, self.Keys.video_clip),
+            _VideoClip,
+        )
 
     @property
     def wifi(self):
-        return type(self).Wifi(self._factory)
+        return self.Wifi(self._get_key_value)
 
-    def update(self, value: "Capabilities"):
-        if not isinstance(value, type(self)):
-            raise TypeError("Can only update from another Capabilities")
-        # pylint: disable=protected-access
-        self._value = value._value
-        return self
 
-    def __repr__(self):
-        return f"<{self.__class__.__name__}: {repr(self._value)}>"
+class UpdatableCapabilities(Capabilities):
+    """Updatatable Capabilities"""
+
+    def update(self, value: Capabilities):
+        """Update underlying values"""
+        if not isinstance(value, Capabilities):
+            raise ValueError("Must provide a Capabilities object")
+        self.__get_value__ = self.create_factory(value.__get_value__())

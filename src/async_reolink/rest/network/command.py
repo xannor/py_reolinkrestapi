@@ -7,7 +7,7 @@ from async_reolink.api.typing import StreamTypes
 from ...rest.typing import stream_type_str
 from ..model import MinMaxRange
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
 
 from . import model
 
@@ -35,10 +35,8 @@ class GetLocalLinkRequest(Request, network.GetLocalLinkRequest):
     def id(self):
         return self._COMMAND_ID
 
-    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+    def __init__(self, /, response_type: ResponseTypes = ...):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetLocalLinkResponse(RestCommandResponse, network.GetLocalLinkResponse):
@@ -69,7 +67,9 @@ class GetLocalLinkResponse(RestCommandResponse, network.GetLocalLinkResponse):
 
     @property
     def local_link(self):
-        return model.LinkInfo(self._value.get(self.Value.Keys.local_link))
+        return model.LinkInfo(
+            self.lookup_factory(self._get_value, self.Value.Keys.local_link, default=None)
+        )
 
 
 class GetChannelStatusRequest(Request, network.GetChannelStatusRequest):
@@ -84,10 +84,8 @@ class GetChannelStatusRequest(Request, network.GetChannelStatusRequest):
     def id(self):
         return self._COMMAND_ID
 
-    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+    def __init__(self, /, response_type: ResponseTypes = ...):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetChannelStatusResponse(RestCommandResponse, network.GetChannelStatusResponse):
@@ -111,7 +109,9 @@ class GetChannelStatusResponse(RestCommandResponse, network.GetChannelStatusResp
 
     @property
     def channels(self):
-        return model.UpdatableChannelStatuses(self._value)
+        return model.UpdatableChannelStatuses(
+            self.lookup_factory(self._get_value, self.Value.Keys.status, default=None)
+        )
 
 
 class GetNetworkPortsRequest(Request, network.GetNetworkPortsRequest):
@@ -126,10 +126,8 @@ class GetNetworkPortsRequest(Request, network.GetNetworkPortsRequest):
     def id(self):
         return self._COMMAND_ID
 
-    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+    def __init__(self, /, response_type: ResponseTypes = ...):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetNetworkPortsResponse(RestCommandResponse, network.GetNetworkPortsResponse):
@@ -160,7 +158,9 @@ class GetNetworkPortsResponse(RestCommandResponse, network.GetNetworkPortsRespon
 
     @property
     def ports(self):
-        return model.NetworkPorts(self._value.get(self.Value.Keys.ports))
+        return model.NetworkPorts(
+            self.lookup_factory(self._get_value, self.Value.Keys.ports, default=None)
+        )
 
 
 class GetRTSPUrlsRequest(Request, network.GetRTSPUrlsRequest):
@@ -171,46 +171,41 @@ class GetRTSPUrlsRequest(Request, network.GetRTSPUrlsRequest):
     COMMAND: Final = "GetRtspUrl"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def id(self):
         return self._COMMAND_ID ^ self.channel_id
 
 
-class _RTSPUrls(providers.DictProvider[str, any], Mapping[StreamTypes, str]):
+class _RTSPUrls(providers.Value[dict[str, any]], Mapping[StreamTypes, str]):
 
     _SUFFIX: Final = "Stream"
 
     __slots__ = ()
 
     def __getitem__(self, __k: StreamTypes) -> str:
-        if (value := self._provided_value) is None:
+        if (value := self.__get_value__) is None:
             return None
         return value.get(stream_type_str(__k) + self._SUFFIX, None)
 
     def __contains__(self, __o: StreamTypes) -> bool:
-        if (value := self._provided_value) is None:
+        if (value := self.__get_value__) is None:
             return False
         return stream_type_str(__o) + self._SUFFIX in value
 
     def __iter__(self):
-        if (value := self._provided_value) is None:
+        if (value := self.__get_value__) is None:
             return
         for _k in StreamTypes:
             if stream_type_str(_k) + self._SUFFIX in value:
                 yield _k
 
     def __len__(self) -> int:
-        if (value := self._provided_value) is None:
+        if (value := self.__get_value__) is None:
             return 0
         return len((True for _v in stream_type_str() if _v + self._SUFFIX in value))
 
@@ -239,14 +234,15 @@ class GetRTSPUrlsResponse(RestCommandResponse, network.GetRTSPUrlsResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
     def _get_urls(self, create=False) -> dict:
-        if value := self._get_provided_value(create):
-            return value.get(self.Value.Keys.urls)
-        return None
+        return self.lookup_value(self._get_value, self.Value.Keys.urls, create=create, default=None)
 
-    _urls: dict = property(_get_urls)
+    @property
+    def _urls(self):
+        return self._get_urls()
 
     @property
     def channel_id(self):
@@ -273,10 +269,8 @@ class GetP2PRequest(Request, network.GetP2PRequest):
     def id(self):
         return self._COMMAND_ID
 
-    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+    def __init__(self, /, response_type: ResponseTypes = ...):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetP2PResponse(RestCommandResponse, network.GetP2PResponse):
@@ -323,10 +317,8 @@ class GetWifiInfoRequest(Request, network.GetWifiInfoRequest):
     def id(self):
         return self._COMMAND_ID
 
-    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+    def __init__(self, /, response_type: ResponseTypes = ...):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetWifiInfoResponse(RestCommandResponse, network.GetWifiInfoResponse):
@@ -372,10 +364,8 @@ class GetWifiSignalRequest(Request, network.GetWifiSignalRequest):
     def id(self):
         return self._COMMAND_ID
 
-    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+    def __init__(self, /, response_type: ResponseTypes = ...):
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetWifiSignalResponse(RestCommandResponse, network.GetWifiSignalResponse):
@@ -406,7 +396,7 @@ class GetWifiSignalResponse(RestCommandResponse, network.GetWifiSignalResponse):
         class JSON(TypedDict):
             """JSON"""
 
-            wifiSignal: model.model.MinMaxRange.JSON
+            wifiSignal: MinMaxRange.JSON
 
     __slots__ = ()
 

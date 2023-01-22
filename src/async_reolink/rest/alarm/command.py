@@ -5,6 +5,8 @@ from async_reolink.api.alarm import command as alarm
 
 from async_reolink.api.connection.model import Request
 
+from .._utilities.providers import value as providers
+
 from ..connection.model import (
     RequestWithChannel,
     ResponseWithChannel,
@@ -18,15 +20,10 @@ class GetMotionStateRequest(RequestWithChannel, alarm.GetMotionStateRequest):
     COMMAND: Final = "GetMdState"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def id(self):
@@ -63,6 +60,8 @@ class GetMotionStateResponse(ResponseWithChannel, alarm.GetMotionStateResponse):
             state: Final = "state"
 
     __slots__ = ()
+
+    _value: Value.JSON
 
     @property
     def state(self):

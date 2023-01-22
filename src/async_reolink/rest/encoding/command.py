@@ -4,6 +4,7 @@ from typing import Final, Protocol, TypeGuard, TypedDict
 from async_reolink.api.encoding import command as encoding
 from async_reolink.api.connection.model import Request
 
+from .._utilities.providers import value as providers
 
 from .model import EncodingInfo
 
@@ -23,15 +24,10 @@ class GetEncodingRequest(RequestWithChannel, encoding.GetEncodingRequest):
     COMMAND: Final = "GetEnc"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def id(self):
@@ -73,16 +69,16 @@ class GetEncodingResponse(RestCommandResponse, encoding.GetEncodingResponse):
 
     _value: Value.JSON
 
-    def _get_info(self, create=False):
-        if value := self._value:
-            return value.get(self.Value.Keys.info)
-        return None
+    def _get_info(self, create=False) -> Value.Encoding.JSON:
+        return self.lookup_value(self._get_value, self.Value.Keys.info, create=create, default=None)
 
-    _info: Value.Encoding.JSON = property(_get_info)
+    @property
+    def _info(self):
+        return self._get_info()
 
     @property
     def info(self):
-        return EncodingInfo(self._info)
+        return EncodingInfo(self._get_info)
 
     @property
     def channel_id(self):

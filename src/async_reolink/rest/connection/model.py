@@ -6,17 +6,18 @@ import json
 from typing import (
     Final,
     Protocol,
+    TypeAlias,
     TypeGuard,
     TypeVar,
     TypedDict,
 )
-from typing_extensions import NotRequired
+from typing_extensions import NotRequired, Unpack
 
 from async_reolink.api.connection import model as connection_model, typing as connection_typing
 
 from .._utilities.json import SupportsJSON
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
 
 # pylint: disable=missing-function-docstring
 
@@ -43,14 +44,23 @@ class CommandKeys(Protocol):
     command: Final = "cmd"
 
 
-class Request(providers.DictProvider[str, any], connection_model.Request, SupportsJSON):
+_JSONDict: TypeAlias = dict[str, any]
+
+
+class Request(providers.Value[_JSONDict], connection_model.Request, SupportsJSON):
     """Rest Request"""
+
+    class KwArgs(TypedDict):
+        """Keyword Args"""
+
+        command: str
+        response_type: NotRequired[ResponseTypes]
 
     class JSON(CommandJSON):
         """JSON"""
 
         action: int
-        param: dict
+        param: _JSONDict
 
     class Keys(CommandKeys, Protocol):
         """Keys"""
@@ -60,49 +70,46 @@ class Request(providers.DictProvider[str, any], connection_model.Request, Suppor
 
     __slots__ = ()
 
-    id = property(id)
+    @property
+    def id(self):
+        return id(self)
 
-    def __init__(self, /, **kwargs: any):
-        super().__init__(None)
+    def __init__(self, /, command: str, response_type: ResponseTypes = ..., **kwargs: any):
+        super().__init__(self.JSON(cmd=command), **kwargs)
+        self.response_type = response_type
+
+    __get_value__: providers.FactoryValue[JSON]
 
     def __json__(self, _encoder: json.JSONEncoder):
-        return self._provided_value
-
-    def _get_provided_value(self, create=False):
-        if (value := super()._get_provided_value(create)) is not None or not create:
-            return value
-        value = {}
-        self._set_provided_value(value)
-        return value
-
-    _value: JSON
+        return self.__get_value__()
 
     @property
     def command(self):
-        if value := self._value:
-            return value.get(self.Keys.command, "")
-        return ""
-
-    @command.setter
-    def command(self, value):
-        self._get_provided_value(True)[self.Keys.command] = str(value)
+        _default = ""
+        return (
+            value.get(self.Keys.command, _default) if (value := self.__get_value__()) else _default
+        )
 
     @property
     def response_type(self):
-        if value := self._value:
-            return ResponseTypes(value.get(Request.Keys.response_type, _DefaultResponseType))
-        return _DefaultResponseType
+        return (
+            ResponseTypes(value.get(self.Keys.response_type, _DefaultResponseType))
+            if (value := self.__get_value__())
+            else _DefaultResponseType
+        )
 
     @response_type.setter
     def response_type(self, value):
-        self._get_provided_value(True)[self.Keys.response_type] = ResponseTypes(value)
+        if value is None or value is ...:
+            value = ResponseTypes.VALUE_ONLY
+        self.__get_value__(True)[self.Keys.response_type] = ResponseTypes(value)
 
-    def _get_parameter(self, create=False) -> dict[str, any]:
-        return self._get_key_value(
-            self._get_provided_value,
+    def _get_parameter(self, create=False) -> _JSONDict:
+        return self.lookup_value(
+            self.__get_value__,
             self.Keys.parameter,
-            create,
-            default=lambda: dict() if create else None,
+            create=create,
+            default_factory=lambda: dict() if create else None,
         )
 
     @property
@@ -123,6 +130,11 @@ class ChannelKeys(Protocol):
 class RequestWithChannel(Request, connection_typing.ChannelValue):
     """Rest Request with Channel Parameter"""
 
+    class KwArgs(Request.KwArgs):
+        """Keyword Args"""
+
+        channel: NotRequired[int]
+
     class Parameter(Protocol):
         """Parameter"""
 
@@ -132,9 +144,14 @@ class RequestWithChannel(Request, connection_typing.ChannelValue):
         class Keys(ChannelKeys, Protocol):
             """Keys"""
 
+    _get_parameter: providers.FactoryValue[Parameter.JSON]
     _parameter: Parameter.JSON
 
     __slots__ = ()
+
+    def __init__(self, /, channel_id: int = 0, **kwargs: Unpack[Request.KwArgs]):
+        super().__init__(**kwargs)
+        self.channel_id = channel_id
 
     @property
     def channel_id(self):
@@ -144,23 +161,23 @@ class RequestWithChannel(Request, connection_typing.ChannelValue):
 
     @channel_id.setter
     def channel_id(self, value):
-        self._get_parameter(True)[self.Parameter.Keys.channel_id] = int(value)
+        self._get_parameter(True)[self.Parameter.Keys.channel_id] = value
 
 
 T = TypeVar("T")
 
 
-class Response(connection_model.Response, providers.DictProvider[str, any]):
+class Response(connection_model.Response, providers.Value[_JSONDict], ABC):
     """Rest Response"""
 
     class JSON(CommandJSON):
         """JSON"""
 
         code: int
-        value: NotRequired[dict[str, any]]
-        initial: NotRequired[dict[str, any]]
-        range: NotRequired[dict[str, any]]
-        error: NotRequired[dict[str, any]]
+        value: NotRequired[_JSONDict]
+        initial: NotRequired[_JSONDict]
+        range: NotRequired[_JSONDict]
+        error: NotRequired[_JSONDict]
 
     class Keys(CommandKeys, Protocol):
         """Keys"""
@@ -189,51 +206,60 @@ class Response(connection_model.Response, providers.DictProvider[str, any]):
     __slots__ = ("__request_id",)
 
     def __init__(self, response: JSON, /, request_id: int = None, **kwargs: any) -> None:
-        super().__init__(**kwargs)
-        providers.DictProvider.__init__(self, response)
+        super().__init__(response, **kwargs)
         self.__request_id = request_id
 
-    @property
-    def _response(self) -> JSON:
-        return self._provided_value
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def request_id(self):
         return self.__request_id
 
+    def _get_value(self, create=False) -> _JSONDict:
+        return self.lookup_value(self.__get_value__, self.Keys.value, create=create, default=None)
+
     @property
     def _value(self):
-        return value.get(self.Keys.value) if (value := self._response) else None
+        return self._get_value()
+
+    def _get_initial(self, create=False) -> _JSONDict:
+        return self.lookup_value(self.__get_value__, self.Keys.initial, create=create, default=None)
 
     @property
     def _initial(self):
-        return value.get(self.Keys.initial) if (value := self._response) else None
+        return self._get_initial()
+
+    def _get_range(self, create=False) -> _JSONDict:
+        return self.lookup_value(self.__get_value__, self.Keys.range, create=create, default=None)
 
     @property
     def _range(self):
-        return value.get(self.Keys.range) if (value := self._response) else None
+        return self._get_range()
+
+    def _get_error(self, create=False) -> _JSONDict:
+        return self.lookup_value(self.__get_value__, self.Keys.error, create=create, default=None)
+
+    @property
+    def _error(self):
+        return self._get_error()
 
     @property
     def is_detailed(self):
-        if not (value := self._response):
+        if not (value := self.__get_value__()):
             return False
         return any(k in value for k in (self.Keys.initial, self.Keys.range))
 
     @property
     def command(self):
-        if value := self._response:
+        if value := self.__get_value__():
             return value.get(self.Keys.command, "")
         return ""
 
     @property
     def code(self):
-        if value := self._response:
+        if value := self.__get_value__():
             return value.get(self.Keys.code, 0)
         return 0
-
-    @property
-    def _error(self):
-        return value.get(self.Keys.error) if (value := self._response) else None
 
 
 class UnhandledResponse(Response):
@@ -269,6 +295,7 @@ class ResponseWithCode(Response, connection_typing.ResponseCode):
         class Keys(ResponseCodeKeys, Protocol):
             """Keys"""
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
     @classmethod
@@ -310,13 +337,14 @@ class ResponseWithChannel(Response, connection_typing.ChannelValue, ABC):
         super().__init__(response, **kwargs)
         self._fallback_channel_id = fallback_channel_id or 0
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
     @property
     def channel_id(self):
         if value := self._value:
-            return value.get(self.Value.Keys.channel_id, 0)
-        return 0
+            return value.get(self.Value.Keys.channel_id, self._fallback_channel_id)
+        return self._fallback_channel_id
 
 
 class ErrorResponse(Response, connection_model.ErrorResponse):
@@ -336,6 +364,7 @@ class ErrorResponse(Response, connection_model.ErrorResponse):
             error_code: Final = ResponseCodeKeys.response_code
             details: Final = "detail"
 
+    _get_error: providers.FactoryValue[Error.JSON]
     _error: Error.JSON
 
     __slots__ = ()

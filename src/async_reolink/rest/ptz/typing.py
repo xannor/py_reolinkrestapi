@@ -31,13 +31,6 @@ for _k, _v in _OPERATION_MAP.items():
     Operation._value2member_map_[_v] = _k
 
 
-class _Missing:
-    pass
-
-
-_MISSING: Final = _Missing()
-
-
 @overload
 def operation_str() -> ValuesView[str]:
     ...
@@ -48,8 +41,8 @@ def operation_str(value: Operation) -> str:
     ...
 
 
-def operation_str(value: Operation = _Missing):
-    if value is _MISSING:
+def operation_str(value: Operation = ...):
+    if value is ...:
         return _OPERATION_MAP.values()
     return _OPERATION_MAP.get(value)
 
@@ -75,7 +68,7 @@ def zoom_operation_str(value: ZoomOperation) -> str:
     ...
 
 
-def zoom_operation_str(value: ZoomOperation):
-    if value is _MISSING:
+def zoom_operation_str(value: ZoomOperation = ...):
+    if value is ...:
         return _ZOOMOPERATION_MAP.values()
     return _ZOOMOPERATION_MAP.get(value)

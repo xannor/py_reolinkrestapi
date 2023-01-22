@@ -1,11 +1,10 @@
 """General Models"""
 
 from typing import (
-    Callable,
     Final,
     Generic,
-    Iterable,
     Protocol,
+    TypeAlias,
     TypeVar,
     TypedDict,
     overload,
@@ -15,35 +14,15 @@ from typing_extensions import LiteralString, Unpack
 
 from async_reolink.api import model, typing
 
-from ._utilities import providers
+from ._utilities.providers import value as providers, mangle
 
 
 _LS = TypeVar("_LS", bound=LiteralString)
 
-
-class _ManglesKeys:
-
-    # __slots__ = ("__prefix", "__suffix")
-
-    def __init__(self, prefix: str = None, suffix: str = None, title=False) -> None:
-        super().__init__()
-        self.__prefix = prefix
-        self.__suffix = suffix
-        self.__title = title
-
-    def _mangle_key(self, key: _LS) -> _LS:
-        if not self.__prefix and not self.__suffix:
-            return key
-        if self.__prefix and self.__title:
-            key = key[0].capitalize() + key[1:]
-        if self.__prefix and self.__suffix:
-            return f"{self.__prefix}{key}{self.__suffix}"
-        if self.__prefix:
-            return f"{self.__prefix}{key}"
-        return f"{key}{self.__suffix}"
+_JSONDict: TypeAlias = dict[str, any]
 
 
-class SimpleTime(providers.DictProvider[str, any], _ManglesKeys, model.SimpleTime):
+class SimpleTime(providers.Value[_JSONDict], model.SimpleTime):
     """REST Simple Time"""
 
     class JSON(TypedDict):
@@ -60,25 +39,25 @@ class SimpleTime(providers.DictProvider[str, any], _ManglesKeys, model.SimpleTim
 
         __all__ = (hour, minute)
 
-    __slots__ = ()
+    __slots__ = ("_mangle_key",)
 
     def __init__(
         self,
-        value: providers.ProvidedDict[str, any] | None = None,
-        prefix: str | None = None,
-        suffix: str | None = None,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
+        /,
+        **kwargs: Unpack[mangle.mangler_kwargs],
     ) -> None:
-        super().__init__(value)
-        _ManglesKeys.__init__(self, prefix, suffix)
+        super().__init__(value, **{k: kwargs[k] for k in kwargs if k not in mangle.mangler_kwkeys})
+        self._mangle_key = mangle.mangler(**kwargs)
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def hour(self):
         _default = 0
         return (
             value.get(self._mangle_key(self.Keys.hour), _default)
-            if (value := self._provided_value)
+            if (value := self.__get_value__())
             else _default
         )
 
@@ -87,13 +66,13 @@ class SimpleTime(providers.DictProvider[str, any], _ManglesKeys, model.SimpleTim
         _default = 0
         return (
             value.get(self._mangle_key(self.Keys.minute), _default)
-            if (value := self._provided_value)
+            if (value := self.__get_value__())
             else _default
         )
 
     @property
     def _unmangled(self) -> JSON:
-        if not (value := self._provided_value):
+        if not (value := self.__get_value__()):
             return {}
         return {
             _k: value[_m]
@@ -107,23 +86,24 @@ class MutableSimpleTime(SimpleTime):
 
     __slots__ = ()
 
-    def _get_provided_value(self, create=False):
-        if (value := super()._get_provided_value(create)) is not None or not create:
-            return value
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
         value = {}
-        self._set_provided_value(value)
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
         return value
 
     @SimpleTime.hour.setter
     def hour(self, value):
-        self._get_provided_value(True)[self._mangle_key(self.Keys.hour)] = int(value)
+        self.__get_value__(True)[self._mangle_key(self.Keys.hour)] = int(value)
 
     @SimpleTime.minute.setter
     def minute(self, value):
-        self._get_provided_value(True)[self._mangle_key(self.Keys.minute)] = int(value)
+        self.__get_value__(True)[self._mangle_key(self.Keys.minute)] = int(value)
 
     def _update(self, **kwargs: Unpack[SimpleTime.JSON]):
-        if (value := self._get_provided_value(True)) is None:
+        if (value := self.__get_value__(True)) is None:
             return
         value.update(
             {
@@ -165,14 +145,14 @@ class Time(SimpleTime, model.Time):
 
         __all__ = SimpleTime.Keys.__all__ + (second,)
 
-    _value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def second(self):
         _default = 0
         return (
             value.get(self._mangle_key(self.Keys.second), _default)
-            if (value := self._provided_value)
+            if (value := self.__get_value__())
             else _default
         )
 
@@ -184,7 +164,7 @@ class MutableTime(MutableSimpleTime, Time):
 
     @Time.second.setter
     def second(self, value):
-        self._get_provided_value(True)[self._mangle_key(self.Keys.second)] = int(value)
+        self.__get_value__(True)[self._mangle_key(self.Keys.second)] = int(value)
 
     def update(self, value: typing.Time):
         super().update(value)
@@ -196,7 +176,7 @@ class MutableTime(MutableSimpleTime, Time):
             pass
 
 
-class Date(providers.DictProvider[str, any], _ManglesKeys, model.Date):
+class Date(providers.Value[_JSONDict], model.Date):
     """REST Date"""
 
     class JSON(TypedDict):
@@ -215,40 +195,49 @@ class Date(providers.DictProvider[str, any], _ManglesKeys, model.Date):
 
         __all__ = (year, month, day)
 
-    __slots__ = ()
+    __slots__ = ("_mangle_key",)
 
     def __init__(
         self,
-        value: providers.ProvidedDict[str, any] | None = None,
-        prefix: str | None = None,
-        suffix: str | None = None,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
+        /,
+        **kwargs: Unpack[mangle.mangler_kwargs],
     ) -> None:
-        super().__init__(value)
-        _ManglesKeys.__init__(self, prefix, suffix)
+        super().__init__(value, **{k: kwargs[k] for k in kwargs if k not in mangle.mangler_kwkeys})
+        self._mangle_key = mangle.mangler(**kwargs)
 
-    _value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def year(self):
-        if value := self._provided_value:
-            return value.get(self.Keys.year, 0)
-        return 0
+        _default = 0
+        return (
+            value.get(self._mangle_key(self.Keys.year), _default)
+            if (value := self.__get_value__())
+            else _default
+        )
 
     @property
     def month(self):
-        if value := self._provided_value:
-            return value.get(self.Keys.month, 0)
-        return 0
+        _default = 0
+        return (
+            value.get(self._mangle_key(self.Keys.month), _default)
+            if (value := self.__get_value__())
+            else _default
+        )
 
     @property
     def day(self):
-        if value := self._provided_value:
-            return value.get(self.Keys.day, 0)
-        return 0
+        _default = 0
+        return (
+            value.get(self._mangle_key(self.Keys.day), _default)
+            if (value := self.__get_value__())
+            else _default
+        )
 
     @property
     def _unmangled(self) -> JSON:
-        if not (value := self._provided_value):
+        if not (value := self.__get_value__()):
             return {}
         return {
             _k: value[_m]
@@ -262,20 +251,28 @@ class MutableDate(Date):
 
     __slots__ = ()
 
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
+        value = {}
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
+        return value
+
     @Date.year.setter
     def year(self, value):
-        self._get_provided_value(True)[self._mangle_key(self.Keys.year)] = int(value)
+        self.__get_value__(True)[self._mangle_key(self.Keys.year)] = int(value)
 
     @Date.month.setter
     def month(self, value: int):
-        self._get_provided_value(True)[self._mangle_key(self.Keys.month)] = int(value)
+        self.__get_value__(True)[self._mangle_key(self.Keys.month)] = int(value)
 
     @Date.day.setter
     def day(self, value: int):
-        self._get_provided_value(True)[self._mangle_key(self.Keys.day)] = int(value)
+        self.__get_value__(True)[self._mangle_key(self.Keys.day)] = int(value)
 
     def _update(self, **kwargs: Unpack[Date.JSON]):
-        if (value := self._get_provided_value(True)) is None:
+        if (value := self.__get_value__(True)) is None:
             return
         value.update(
             {
@@ -306,7 +303,7 @@ class MutableDate(Date):
 
 @Date.register
 @Time.register
-class DateTime(providers.DictProvider[str, any], _ManglesKeys, model.DateTime):
+class DateTime(providers.Value[_JSONDict], model.DateTime):
     """REST DateTime"""
 
     class JSON(Date.JSON, Time.JSON):
@@ -317,18 +314,18 @@ class DateTime(providers.DictProvider[str, any], _ManglesKeys, model.DateTime):
 
         __all__ = Date.Keys.__all__ + Time.Keys.__all__
 
-    __slots__ = ()
+    __slots__ = ("_mangle_key",)
 
     def __init__(
         self,
-        value: providers.ProvidedDict[str, any] | None = None,
-        prefix: str | None = None,
-        suffix: str | None = None,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
+        /,
+        **kwargs: Unpack[mangle.mangler_kwargs],
     ) -> None:
-        super().__init__(value)
-        _ManglesKeys.__init__(self, prefix, suffix)
+        super().__init__(value, **{k: kwargs[k] for k in kwargs if k not in mangle.mangler_kwkeys})
+        self._mangle_key = mangle.mangler(**kwargs)
 
-    _value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     year = MutableDate.year.setter(None)
     month = MutableDate.month.setter(None)
@@ -340,7 +337,7 @@ class DateTime(providers.DictProvider[str, any], _ManglesKeys, model.DateTime):
 
     @property
     def _unmangled(self) -> JSON:
-        if not (value := self._provided_value):
+        if not (value := self.__get_value__()):
             return {}
         return {
             _k: value[_m]
@@ -356,6 +353,14 @@ class MutableDateTime(DateTime):
 
     __slots__ = ()
 
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
+        value = {}
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
+        return value
+
     year = MutableDate.year.setter(MutableDate.year.fset)
     month = MutableDate.month.setter(MutableDate.year.fset)
     day = MutableDate.day.setter(MutableDate.year.fset)
@@ -364,7 +369,7 @@ class MutableDateTime(DateTime):
     second = MutableTime.second.setter(MutableDate.year.fset)
 
     def _update(self, **kwargs: Unpack[DateTime.JSON]):
-        if (value := self._get_provided_value(True)) is None:
+        if (value := self.__get_value__(True)) is None:
             return
         value.update(
             {
@@ -387,7 +392,7 @@ class MutableDateTime(DateTime):
 T = TypeVar("T")
 
 
-class MinMaxRange(providers.DictProvider[str, any], _ManglesKeys, Generic[T]):
+class MinMaxRange(providers.Value[_JSONDict], Generic[T]):
     """Min/Max values"""
 
     class JSON(TypedDict):
@@ -404,40 +409,37 @@ class MinMaxRange(providers.DictProvider[str, any], _ManglesKeys, Generic[T]):
 
     __slots__ = ()
 
+    __get_value__: providers.FactoryValue[JSON]
+
     @overload
     def __init__(
         self: "MinMaxRange[int]",
-        value: providers.ProvidedDict[str, any] | None = None,
-        prefix: str | None = None,
-        suffix: str | None = None,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
+        /,
+        **kwargs: Unpack["MinMaxRange.KwArgs"],
     ) -> None:
-        super().__init__(value)
-        _ManglesKeys.__init__(self, prefix, suffix)
         ...
 
     def __init__(
         self,
-        value: providers.ProvidedDict[str, any] | None = None,
-        prefix: str | None = None,
-        suffix: str | None = None,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
+        /,
+        **kwargs: Unpack["MinMaxRange.KwArgs"],
     ) -> None:
-        super().__init__(value)
-        _ManglesKeys.__init__(self, prefix, suffix)
-
-    _provided_value: JSON
+        super().__init__(value, **kwargs)
 
     @property
     def min(self) -> T:
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.min)
 
     @property
     def max(self) -> T:
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.max)
 
 
-class StringRange(providers.DictProvider[str, any]):
+class StringRange(providers.Value[_JSONDict]):
     """String Ranges"""
 
     class JSON(TypedDict):
@@ -452,9 +454,11 @@ class StringRange(providers.DictProvider[str, any]):
 
     __slots__ = ("__prefix", "__suffix")
 
+    __get_value__: providers.FactoryValue[JSON]
+
     def __init__(
         self,
-        value: providers.ProvidedDict[str, any] | None = None,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> None:
@@ -462,11 +466,13 @@ class StringRange(providers.DictProvider[str, any]):
         self.__prefix = prefix
         self.__suffix = suffix
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def length(self):
         """length ranges"""
         return MinMaxRange(
-            self._provided_value, self.__prefix, f"{self.Keys.length}{self.__suffix}"
+            self.__get_value__,
+            prefix=self.__prefix,
+            suffix=f"{self.Keys.length}{self.__suffix}",
         )

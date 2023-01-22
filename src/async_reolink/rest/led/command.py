@@ -5,7 +5,7 @@ from typing import Final, Callable, Protocol, TypedDict
 from async_reolink.api.led import command as led
 from async_reolink.api.led import typing as led_typing
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
 
 from .. import model
 
@@ -30,15 +30,10 @@ class GetIrLightsRequest(RequestWithChannel, led.GetIrLightsRequest):
     COMMAND: Final = "GetIrLights"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def id(self):
@@ -93,26 +88,37 @@ class GetIrLightsResponse(RestCommandResponse, led.GetIrLightsResponse):
 
             lights: Final = "IrLights"
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
-    def _get_lights(self, create=False):
-        if value := self._value:
-            return value.get(self.Value.Keys.lights)
-        return None
+    def _get_lights(self, create=False) -> Value.Lights.JSON:
+        return self.lookup_value(
+            self._get_value,
+            self.Value.Keys.lights,
+            create=create,
+            default=None,
+        )
 
-    _lights: Value.Lights.JSON = property(_get_lights)
+    @property
+    def _lights(self):
+        return self._get_lights()
 
     @property
     def channel_id(self):
-        if value := self._lights:
-            return value.get(self.Value.Lights.Keys.channel_id, 0)
-        return 0
+        _default = 0
+        return (
+            value.get(self.Value.Lights.Keys.channel_id, _default)
+            if (value := self._lights)
+            else _default
+        )
 
     @property
     def state(self):
-        if value := self._lights:
-            return led_typing.LightStates(value.get(LightStateKeys.state, _DefaultLightState))
-        return _DefaultLightState
+        return (
+            led_typing.LightStates(value.get(self.Value.Lights.Keys.state, _DefaultLightState))
+            if (value := self._lights)
+            else _DefaultLightState
+        )
 
 
 class SetIrLightsRequest(Request, led.SetIrLightsRequest):
@@ -128,28 +134,35 @@ class SetIrLightsRequest(Request, led.SetIrLightsRequest):
 
     def __init__(
         self,
-        state: led_typing.LightStates,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
+        /,
+        channel_id: int = ...,
+        response_type: ResponseTypes = ...,
+        state: led_typing.LightStates = ...,
     ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
-        self.state = state
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
+        if state and state is not ...:
+            self.state = state
 
     @property
     def id(self):
         return self._COMMAND_ID ^ self.channel_id
 
+    _get_parameter: providers.FactoryValue[Parameter.JSON]
     _parameter: Parameter.JSON
 
-    def _get_lights(self, create=False) -> dict:
-        if (value := self._get_parameter(create)) or not create:
-            return value
-        return self._get_parameter(True).setdefault(self.Parameter.Keys.lights, {})
+    def _get_lights(self, create=False) -> Parameter.Lights.JSON:
+        return self.lookup_value(
+            self._get_parameter,
+            self.Parameter.Keys.lights,
+            create=create,
+            default_factory=lambda: dict() if create else None,
+        )
 
-    _lights: Parameter.Lights.JSON = property(_get_lights)
+    @property
+    def _lights(self):
+        return self._get_lights()
 
     @GetIrLightsResponse.channel_id.setter
     def channel_id(self, value):
@@ -168,15 +181,10 @@ class GetPowerLedRequest(RequestWithChannel, led.GetPowerLedRequest):
     COMMAND: Final = "GetPowerLed"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def id(self):
@@ -210,14 +218,20 @@ class GetPowerLedResponse(RestCommandResponse, led.GetPowerLedResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
-    def _get_lights(self, create=False):
-        if value := self._value:
-            return value.get(self.Value.Keys.lights)
-        return None
+    def _get_lights(self, create=False) -> Value.Lights.JSON:
+        return self.lookup_value(
+            self._get_value,
+            self.Value.Keys.lights,
+            create=create,
+            default=None,
+        )
 
-    _lights: Value.Lights.JSON = property(_get_lights)
+    @property
+    def _lights(self):
+        return self._get_lights()
 
     @property
     def channel_id(self):
@@ -245,28 +259,35 @@ class SetPowerLedRequest(Request, led.SetPowerLedRequest):
 
     def __init__(
         self,
-        state: led_typing.LightStates,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
+        /,
+        state: led_typing.LightStates = ...,
+        channel_id: int = ...,
+        response_type: ResponseTypes = ...,
     ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
-        self.state = state
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
+        if state and state is not ...:
+            self.state = state
 
     @property
     def id(self):
         return self._COMMAND_ID ^ self.channel_id
 
+    _get_parameter: providers.FactoryValue[Parameter.JSON]
     _parameter: Parameter.JSON
 
-    def _get_lights(self, create=False) -> dict:
-        if (value := self._get_parameter(create)) or not create:
-            return value
-        return self._get_parameter(True).setdefault(self.Parameter.Keys.lights, {})
+    def _get_lights(self, create=False) -> Parameter.Lights.JSON:
+        return self.lookup_value(
+            self._get_parameter,
+            self.Parameter.Keys.lights,
+            create=create,
+            default_factory=lambda: dict() if create else None,
+        )
 
-    _lights: Parameter.Lights.JSON = property(_get_lights)
+    @property
+    def _lights(self):
+        return self._get_lights()
 
     @GetPowerLedResponse.channel_id.setter
     def channel_id(self, value):
@@ -285,22 +306,17 @@ class GetWhiteLedRequest(RequestWithChannel, led.GetWhiteLedRequest):
     COMMAND: Final = "GetWhiteLed"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def id(self):
         return self._COMMAND_ID ^ self.channel_id
 
 
-class _WhiteLedRange(providers.DictProvider[str, any]):
+class _WhiteLedRange(providers.Value[dict[str, any]]):
     class JSON(TypedDict):
         """JSON"""
 
@@ -363,18 +379,26 @@ class GetWhiteLedResponse(RestCommandResponse, led.GetWhiteLedResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
+    _get_initial: providers.FactoryValue[Value.JSON]
     _initial: Value.JSON
 
+    _get_range: providers.FactoryValue[Range.JSON]
     _range: Range.JSON
 
-    def _get_lights(self, create=False):
-        if value := self._value:
-            return value.get(self.Value.Keys.lights)
-        return None
+    def _get_lights(self, create=False) -> Value.Lights.JSON:
+        return self.lookup_value(
+            self._get_value,
+            self.Value.Keys.lights,
+            create=create,
+            default=None,
+        )
 
-    _lights: Value.Lights.JSON = property(_get_lights)
+    @property
+    def _lights(self):
+        return self._get_lights()
 
     @property
     def channel_id(self):
@@ -386,23 +410,17 @@ class GetWhiteLedResponse(RestCommandResponse, led.GetWhiteLedResponse):
     def info(self):
         return local_model.WhiteLedInfo(self._get_lights)
 
-    def _get_initial_lights(self, create=False):
-        if value := self._initial:
-            return value.get(self.Value.Keys.lights)
-        return None
-
     @property
     def initial_info(self):
-        return local_model.WhiteLedInfo(self._get_initial_lights)
-
-    def _get_range_lights(self, create=False):
-        if value := self._range:
-            return value.get(self.Range.Keys.lights)
-        return None
+        return local_model.WhiteLedInfo(
+            self.lookup_factory(self._get_initial, self.Value.Keys.lights, default=None)
+        )
 
     @property
     def info_range(self):
-        return _WhiteLedRange(self._get_range_lights)
+        return _WhiteLedRange(
+            self.lookup_factory(self._get_range, self.Range.Keys.lights, default=None)
+        )
 
 
 class SetWhiteLedRequest(Request, led.SetWhiteLedRequest):
@@ -418,6 +436,19 @@ class SetWhiteLedRequest(Request, led.SetWhiteLedRequest):
 
     def __init__(
         self,
+        /,
+        info: led_typing.WhiteLedInfo = ...,
+        channel_id: int = ...,
+        response_type: ResponseTypes = ...,
+    ):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
+        if info and info is not ...:
+            self.info = info
+
+    def __init__(
+        self,
         channel_id: int = 0,
         response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
     ):
@@ -430,14 +461,20 @@ class SetWhiteLedRequest(Request, led.SetWhiteLedRequest):
     def id(self):
         return self._COMMAND_ID ^ self.channel_id
 
+    _get_parameter: providers.FactoryValue[Parameter.JSON]
     _parameter: Parameter.JSON
 
-    def _get_lights(self, create=False) -> dict:
-        if (value := self._get_parameter(create)) or not create:
-            return value
-        return self._get_parameter(True).setdefault(self.Parameter.Keys.lights, {})
+    def _get_lights(self, create=False) -> Parameter.Lights.JSON:
+        return self.lookup_value(
+            self._get_parameter,
+            self.Parameter.Keys.lights,
+            create=create,
+            default_factory=lambda: dict() if create else None,
+        )
 
-    _lights: Parameter.Lights.JSON = property(_get_lights)
+    @property
+    def _lights(self):
+        return self._get_lights()
 
     @GetWhiteLedResponse.channel_id.setter
     def channel_id(self, value):

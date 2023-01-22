@@ -1,10 +1,10 @@
 """Encoding REST models"""
 
-from typing import Callable, Final, Mapping, Protocol, TypedDict
+from typing import Callable, Final, Mapping, Protocol, TypeAlias, TypedDict
 from async_reolink.api.typing import StreamTypes
 from async_reolink.api.encoding import typing as encoding_typing
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
 
 from .. import model
 
@@ -12,8 +12,10 @@ from ..encoding.typing import stream_types_str
 
 # pylint:disable=missing-function-docstring
 
+_JSONDict: TypeAlias = dict[str, any]
 
-class StreamEncodingInfo(providers.DictProvider[str, any], encoding_typing.StreamEncodingInfo):
+
+class StreamEncodingInfo(providers.Value[_JSONDict], encoding_typing.StreamEncodingInfo):
     """REST Stream Encoding Info"""
 
     class JSON(TypedDict):
@@ -40,70 +42,65 @@ class StreamEncodingInfo(providers.DictProvider[str, any], encoding_typing.Strea
         size: Final = "size"
         video_type: Final = "video_type"
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def bit_rate(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.bit_rate, 0)
         return 0
 
     @property
     def frame_rate(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.frame_rate, 0)
         return 0
 
     @property
     def gop(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.gop, 0)
         return 0
 
     @property
     def height(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.height, 0)
         return 0
 
     @property
     def width(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.width, 0)
         return 0
 
     @property
     def profile(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.profile, "")
         return ""
 
     @property
     def size(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.size, "")
         return ""
 
     @property
     def video_type(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.video_type, "")
         return ""
 
 
-class _StreamMapping(providers.DictProvider[str, any], Mapping[StreamTypes, StreamEncodingInfo]):
+class _StreamMapping(providers.Value[_JSONDict], Mapping[StreamTypes, StreamEncodingInfo]):
     __slots__ = ()
 
     def __getitem__(self, __k: StreamTypes):
-        def _get():
-            if __value := self._provided_value:
-                return __value.get(stream_types_str(__k), None)
-            return None
-
-        return StreamEncodingInfo(_get)
+        return StreamEncodingInfo(self.lookup_factory(self.__get_value__, stream_types_str(__k)))
 
     def __iter__(self):
-        if not (__value := self._provided_value):
+        if not (__value := self.__get_value__()):
             return
 
         for __k in StreamTypes:
@@ -111,12 +108,12 @@ class _StreamMapping(providers.DictProvider[str, any], Mapping[StreamTypes, Stre
                 yield __k
 
     def __len__(self):
-        if __value := self._provided_value:
+        if __value := self.__get_value__():
             return len(stream_types_str() & __value.keys())
         return 0
 
 
-class EncodingInfo(providers.DictProvider[str, any], encoding_typing.EncodingInfo):
+class EncodingInfo(providers.Value[_JSONDict], encoding_typing.EncodingInfo):
     """REST Encoding Info"""
 
     class JSON(TypedDict):
@@ -129,14 +126,14 @@ class EncodingInfo(providers.DictProvider[str, any], encoding_typing.EncodingInf
 
         audio: Final = "audio"
 
-    _provided_value: JSON | dict[str, any]
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def audio(self):
-        return True if (value := self._provided_value) and value.get(self.Keys.audio) else False
+        return True if (value := self.__get_value__()) and value.get(self.Keys.audio, 0) else False
 
     @property
     def stream(self):
         """stream"""
 
-        return _StreamMapping(self._get_value)
+        return _StreamMapping(self.__get_value__)

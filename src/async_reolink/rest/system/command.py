@@ -3,6 +3,7 @@
 from typing import Final, Protocol, TypedDict
 from async_reolink.api.system import command as system
 
+from .._utilities.providers import value as providers
 from .._utilities.dictlist import DictList
 
 from .model import UserInfo, DaylightSavingsTimeInfo, DeviceInfo, TimeInfo, StorageInfo
@@ -13,7 +14,7 @@ from ..connection.model import (
     Response as RestResponse,
 )
 
-from .capabilities import Capabilities
+from .capabilities import UpdatableCapabilities
 
 # pylint:disable=missing-function-docstring
 # pylint: disable=too-few-public-methods
@@ -50,20 +51,19 @@ class GetAbilitiesRequest(Request, system.GetAbilitiesRequest):
     _NO_USER: Final = "NULL"
     _NO_USER_ID: Final = hash(_NO_USER)
 
-    def __init__(
-        self,
-    ) -> None:
-        super().__init__()
-        self.command = self.COMMAND
-        self.response_type = ResponseTypes.VALUE_ONLY
-        self._id = self._COMMAND_ID ^ self._NO_USER_ID
+    def __init__(self, /, user_name: str = ...) -> None:
+        super().__init__(command=type(self).COMMAND, response_type=ResponseTypes.VALUE_ONLY)
+        if user_name is not ...:
+            self.user_name = user_name
+        else:
+            self._id = self._COMMAND_ID ^ self._NO_USER_ID
 
     def _get_user(self, create=False) -> Parameter.User.JSON:
-        return self._get_key_value(
+        return self.lookup_value(
             self._get_parameter,
             self.Parameter.Keys.user,
-            create,
-            default=lambda: dict() if create else None,
+            create=create,
+            default_factory=lambda: dict() if create else None,
         )
 
     @property
@@ -82,8 +82,6 @@ class GetAbilitiesRequest(Request, system.GetAbilitiesRequest):
 
     @user_name.setter
     def user_name(self, value):
-        if value == self._NO_USER_ID:
-            value = None
         self._get_user(True)[self.Parameter.User.Keys.user_name] = (
             str(value) if value else self._NO_USER
         )
@@ -116,17 +114,14 @@ class GetAbilitiesResponse(RestResponse, system.GetAbilitiesResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
     @property
-    def _capabilities(self):
-        if value := self._value:
-            return value.get(self.Value.Keys.capabilities)
-        return None
-
-    @property
     def capabilities(self):
-        return Capabilities(self._capabilities)
+        return UpdatableCapabilities(
+            self.lookup_factory(self._get_value, self.Value.Keys.capabilities, default=None)
+        )
 
 
 class GetDeviceInfoRequest(Request, system.GetDeviceInfoRequest):
@@ -140,9 +135,7 @@ class GetDeviceInfoRequest(Request, system.GetDeviceInfoRequest):
         return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetDeviceInfoResponse(RestResponse, system.GetDeviceInfoResponse):
@@ -169,17 +162,12 @@ class GetDeviceInfoResponse(RestResponse, system.GetDeviceInfoResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
     @property
-    def _info(self):
-        if value := self._value:
-            return value.get(self.Value.Keys.info)
-        return None
-
-    @property
     def info(self):
-        return DeviceInfo(self._info)
+        return DeviceInfo(self.lookup_factory(self._get_value, self.Value.Keys.info, default=None))
 
 
 class GetTimeRequest(Request, system.GetTimeRequest):
@@ -193,9 +181,7 @@ class GetTimeRequest(Request, system.GetTimeRequest):
         return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetTimeResponse(RestResponse, system.GetTimeResponse):
@@ -204,6 +190,7 @@ class GetTimeResponse(RestResponse, system.GetTimeResponse):
     @classmethod
     def from_response(cls, response: any, /, request: Request | None = None, **kwargs):
         if super().is_response(response, GetTimeRequest.COMMAND):
+            t = GetTimeResponse(response, request_id=request.id if request else None, **kwargs)
             return cls(response, request_id=request.id if request else None, **kwargs)
         return None
 
@@ -224,27 +211,18 @@ class GetTimeResponse(RestResponse, system.GetTimeResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
     @property
-    def _dst(self):
-        if value := self._value:
-            return value.get(self.Value.Keys.dst)
-        return None
-
-    @property
     def dst(self):
-        return DaylightSavingsTimeInfo(self._dst)
-
-    @property
-    def _time(self):
-        if value := self._value:
-            return value.get(self.Value.Keys.time)
-        return None
+        return DaylightSavingsTimeInfo(
+            self.lookup_factory(self._get_value, self.Value.Keys.dst, default=None)
+        )
 
     @property
     def time(self):
-        return TimeInfo(self._time)
+        return TimeInfo(self.lookup_factory(self._get_value, self.Value.Keys.time, default=None))
 
 
 class RebootRequest(Request, system.RebootRequest):
@@ -260,9 +238,7 @@ class RebootRequest(Request, system.RebootRequest):
         return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetHddInfoRequest(Request, system.GetHddInfoRequest):
@@ -278,9 +254,7 @@ class GetHddInfoRequest(Request, system.GetHddInfoRequest):
         return self._COMMAND_ID
 
     def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
 
 
 class GetHddInfoResponse(RestResponse, system.GetHddInfoResponse):
@@ -307,12 +281,13 @@ class GetHddInfoResponse(RestResponse, system.GetHddInfoResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
     @property
-    def _info(self) -> list[StorageInfo.JSON]:
-        return self._get_key_value(self._get_value, self.Value.Keys.info, default=None)
-
-    @property
     def info(self) -> DictList[int, StorageInfo]:
-        return DictList(StorageInfo.Keys.id, self._info, StorageInfo)
+        return DictList(
+            StorageInfo.Keys.id,
+            self.lookup_factory(self._get_value, self.Value.Keys.info, default=None),
+            StorageInfo,
+        )

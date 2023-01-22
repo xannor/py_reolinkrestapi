@@ -8,6 +8,7 @@ from async_reolink.api.connection.mixin import Connection
 from async_reolink.api.connection.model import Request, Response
 
 from async_reolink.rest.connection.model import ResponseWithCode
+from async_reolink.rest.connection.typing import WithConnection
 
 
 class MockConnectionValues(TypedDict):
@@ -24,10 +25,11 @@ _MOCK_DEFAULTS: MockConnectionValues = {
 }
 
 
-class MockConnection(Connection, ABC):
+class MockConnection(Connection, WithConnection, ABC):
     """Mocked Connection"""
 
     def __init__(self, *args, logger: logging.Logger = None, **kwargs) -> None:
+        self._force_get_callbacks = []
         super().__init__(*args, **kwargs)
         self._mocked: MockConnectionValues = {}.update(_MOCK_DEFAULTS)
         self._logger = logger

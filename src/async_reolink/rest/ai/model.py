@@ -1,28 +1,27 @@
 """AI Models"""
 
-from abc import ABC, abstractmethod
 from typing import (
-    Callable,
     Final,
     Iterable,
     Mapping,
     MutableMapping,
     Protocol,
+    TypeAlias,
     TypedDict,
 )
 from async_reolink.api.ai import typing as ai_typing
 
-from .._utilities import providers
-
-from .. import model
+from .._utilities.providers import value as providers
 
 from ..ai.typing import ai_types_str
 
 # pylint: disable=too-few-public-methods
 # pylint:disable=missing-function-docstring
 
+_JSONDict: TypeAlias = dict[str, any]
 
-class AlarmState(providers.DictProvider[str, any], ai_typing.AlarmState):
+
+class AlarmState(providers.Value[_JSONDict], ai_typing.AlarmState):
     """Alarm State"""
 
     class JSON(TypedDict):
@@ -39,40 +38,45 @@ class AlarmState(providers.DictProvider[str, any], ai_typing.AlarmState):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def state(self):
-        return True if (value := self._provided_value) and value.get(self.Keys.state) else False
+        return True if (value := self.__get_value__()) and value.get(self.Keys.state, 0) else False
 
     @property
     def supported(self):
-        return True if (value := self._provided_value) and value.get(self.Keys.supported) else False
+        return (
+            True if (value := self.__get_value__()) and value.get(self.Keys.supported, 0) else False
+        )
 
 
-class State(providers.DictProvider[str, any], Mapping[ai_typing.AITypes, AlarmState]):
+class State(providers.Value[_JSONDict], Mapping[ai_typing.AITypes, AlarmState]):
     """AI State"""
 
     __slots__ = ()
 
-    def __getitem__(self, __k: ai_typing.AITypes):
-        def _factory(_: bool) -> dict:
-            return self._provided_value.get(ai_types_str(__k), None)
+    __get_value__: providers.FactoryValue[dict[str, AlarmState.JSON]]
 
-        return AlarmState(_factory)
+    def __getitem__(self, __k: ai_typing.AITypes):
+        return AlarmState(self.lookup_factory(self.__get_value__, ai_types_str(__k)))
 
     def __contains__(self, __o: ai_typing.AITypes):
-        return ai_types_str(__o) in self._provided_value
+        if not (value := self.__get_value__()):
+            return False
+        return ai_types_str(__o) in value
 
     def __iter__(self):
+        if not (value := self.__get_value__()):
+            return
         for _k in ai_typing.AITypes:
-            if ai_types_str(_k) in self._provided_value:
+            if ai_types_str(_k) in value:
                 yield _k
 
     def __len__(self):
-        if _map := self._provided_value:
-            return len(ai_types_str() & _map.keys())
-        return 0
+        if not (value := self.__get_value__()):
+            return 0
+        return len(ai_types_str() & value.keys())
 
 
 class UpdatableState(State):
@@ -81,35 +85,36 @@ class UpdatableState(State):
     __slots__ = ()
 
     def update(self, value: State):
-        if not isinstance(value, type(self)):
+        if not isinstance(value, State):
             raise TypeError("Can only update from another State")
 
-        # pylint: disable=protected-access
-        self._set_value(value._provided_value)
+        self.__set_value__(value.__get_value__())
         return self
 
 
-class AITypesMap(providers.DictProvider[str, any], Mapping[ai_typing.AITypes, bool]):
+class AITypesMap(providers.Value[_JSONDict], Mapping[ai_typing.AITypes, bool]):
     """AI Types Map"""
 
     __slots__ = ()
 
-    def __getitem__(self, __k: ai_typing.AITypes) -> bool:
-        if _map := self._provided_value:
-            return True if _map.get(ai_types_str(__k), 0) else False
-        return False
+    def __getitem__(self, __k: ai_typing.AITypes):
+        if not (value := self.__get_value__()):
+            return False
+
+        return True if value.get(ai_types_str(__k), 0) else False
 
     def __iter__(self):
-        if not (_map := self._provided_value):
+        if not (value := self.__get_value__()):
             return
         for _e in ai_typing.AITypes:
-            if ai_types_str(_e) in _map:
+            if ai_types_str(_e) in value:
                 yield _e
 
     def __len__(self):
-        if _map := self._provided_value:
-            return len(ai_types_str() & _map.keys())
-        return 0
+        if not (value := self.__get_value__()):
+            return 0
+
+        return len(ai_types_str() & value.keys())
 
 
 class MutableAITypesMap(AITypesMap, MutableMapping[ai_typing.AITypes, bool]):
@@ -117,23 +122,40 @@ class MutableAITypesMap(AITypesMap, MutableMapping[ai_typing.AITypes, bool]):
 
     __slots__ = ()
 
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
+        value = {}
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
+        return value
+
+    def __init__(
+        self, get_value: providers.FactoryValue[_JSONDict] = None, /, **kwargs: any
+    ) -> None:
+        super().__init__(
+            get_value if get_value is not None else self.create_factory(default_factory=dict),
+            **kwargs,
+        )
+
     def __setitem__(self, __k: ai_typing.AITypes, __v: bool) -> None:
-        if (_map := self._get_value(True)) is None:
+        if not (value := self.__get_value__(True)):
             raise KeyError()
-        _map[ai_types_str(__k)] = int(__v)
+
+        value[ai_types_str(__k)] = int(bool(__v))
 
     def __delitem__(self, __v: ai_typing.AITypes) -> None:
-        if (_map := self._get_value(True)) is None:
-            raise KeyError()
-        del _map[ai_types_str(__v)]
+        if not (value := self.__get_value__()):
+            return
+        del value[ai_types_str(__v)]
 
     def clear(self) -> None:
-        if (_map := self._provided_value) is None:
+        if not (value := self.__get_value__()):
             return
-        _map.clear()
+        value.clear()
 
 
-class Config(providers.DictProvider[str, any], ai_typing.Config):
+class Config(providers.Value[_JSONDict], ai_typing.Config):
     """AI Configuration"""
 
     class JSON(TypedDict):
@@ -154,40 +176,46 @@ class Config(providers.DictProvider[str, any], ai_typing.Config):
 
     __slots__ = ()
 
-    def _get_detect_type(self, create=False) -> dict:
-        if value := self._get_value(create):
-            return value.get(self.Keys.detect_type)
-        return None
+    __get_value__: providers.FactoryValue[JSON]
 
-    _detect_type: dict[str, int] = property(_get_detect_type)
-
-    def _get_type(self, create=False) -> dict:
-        if value := self._get_value(create):
-            return value.get(self.Keys.type)
-        return None
-
-    _type: dict[str, int] = property(_get_type)
+    @property
+    def _detect_type(self, create=False) -> _JSONDict:
+        return self.lookup_value(self.__get_value__, self.Keys.detect_type, create, default=None)
 
     @property
     def detect_type(self):
         """detect type"""
 
-        return AITypesMap(lambda _: self._detect_type)
+        return AITypesMap(type(self)._detect_type.fget.__get__(self))
+
+    # @property
+    # def type(self):
+    #     """old type"""
+
+    #     return AITypesMap(self._key_value_factory(self.__get_value__, self.Keys.type))
 
     @property
     def ai_track(self):
-        return True if (value := self.__value) and value.get(self.Keys.ai_track, 0) else False
+        return (
+            True if (value := self.__get_value__()) and value.get(self.Keys.ai_track, 0) else False
+        )
 
-    def _get_track_type(self, create=False) -> dict:
-        if value := self._get_value(create):
-            return value.get(self.Keys.track_type)
-        return None
-
-    _track_type: dict[str, int] = property(_get_track_type)
+    @property
+    def _track_type(self, create=False) -> _JSONDict:
+        return self.lookup_value(self.__get_value__, self.Keys.track_type, create, default=None)
 
     @property
     def track_type(self):
-        return AITypesMap(lambda _: self._track_type)
+        return AITypesMap(type(self)._track_type.fget.__get__(self))
+
+    def __copy_values__(self):
+        if (value := self.__get_value__()) is None:
+            return None
+        copy = value.copy()
+        for _k in {self.Keys.detect_type, self.Keys.track_type, self.Keys.type} & copy.keys():
+            _d: dict = copy[_k]
+            copy[_k] = _d.copy()
+        return copy
 
 
 class MutableConfig(Config):
@@ -195,16 +223,28 @@ class MutableConfig(Config):
 
     __slots__ = ()
 
-    def _get_detect_type(self, create=False) -> dict:
-        if (value := super()._get_detect_type(create)) or not create:
-            return value
-        return self._get_value(True).setdefault(self.Keys.detect_type, {})
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
+        value = {}
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
+        return value
+
+    @property
+    def _detect_type(self, create=False) -> _JSONDict:
+        return self.lookup_value(
+            self.__get_value__,
+            self.Keys.detect_type,
+            create,
+            default_factory=lambda: dict() if create else None,
+        )
 
     @property
     def detect_type(self):
         """detect type"""
 
-        return MutableAITypesMap(lambda create: self._get_detect_type(create))
+        return MutableAITypesMap(type(self)._detect_type.fget.__get__(self))
 
     def _update_aitypes_map(
         self,
@@ -224,20 +264,24 @@ class MutableConfig(Config):
     def detect_type(self, value):
         self._update_aitypes_map(self.detect_type, value)
 
-    def _get_track_type(self, create=False) -> dict:
-        if (value := super()._get_track_type(create)) or not create:
-            return value
-        return self._get_value(True).setdefault(self.Keys.track_type, {})
-
     @Config.ai_track.setter
     def ai_track(self, value):
-        self._get_value(True)[self.Keys.ai_track] = int(value)
+        self.__get_value__(True)[self.Keys.ai_track] = int(bool(value))
+
+    @property
+    def _track_type(self, create=False) -> _JSONDict:
+        return self.lookup_value(
+            self.__get_value__,
+            self.Keys.track_type,
+            create,
+            default_factory=lambda: dict() if create else None,
+        )
 
     @property
     def track_type(self):
         """track type"""
 
-        return MutableAITypesMap(lambda create: self._get_track_type(create))
+        return MutableAITypesMap(type(self)._track_type.fget.__get__(self))
 
     @track_type.setter
     def track_type(self, value):
@@ -245,8 +289,10 @@ class MutableConfig(Config):
 
     def update(self, value: ai_typing.Config):
         if isinstance(value, Config):
-            if _u := self._value_factory(True):
-                _u.update({**value})
+            _d: Config.JSON
+            if (_d := value.__copy_values__()) is not None:
+                if _u := self.__get_value__(True):
+                    _u.update(_d)
             return
         try:
             self.ai_track = value.ai_track

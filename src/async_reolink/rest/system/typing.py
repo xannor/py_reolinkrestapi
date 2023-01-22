@@ -7,10 +7,10 @@ from typing import Final, ValuesView, overload
 from async_reolink.api.typing import WeekDays
 from async_reolink.api.system.typing import StorageTypes, HourFormat
 
-from .._utilities.missing import MISSING
-
 _WEEKDAY_MAP: Final = MappingProxyType({_e: (int(_e.value) + 1) % 7 for _e in WeekDays})
 _REV_WEEKDAY_MAP: Final = MappingProxyType({_v: _k for (_k, _v) in _WEEKDAY_MAP.items()})
+
+_MISSING_VALUE: Final = ...
 
 
 @overload
@@ -23,8 +23,8 @@ def weekday_int(value: WeekDays) -> int:
     ...
 
 
-def weekday_int(value: WeekDays = MISSING):
-    if value is MISSING:
+def weekday_int(value: WeekDays = _MISSING_VALUE):
+    if value is _MISSING_VALUE:
         return _WEEKDAY_MAP.values()
     return _WEEKDAY_MAP.get(value)
 
@@ -47,8 +47,8 @@ def storage_type_int(value: StorageTypes) -> int:
     ...
 
 
-def storage_type_int(value: StorageTypes = MISSING):
-    if value is MISSING:
+def storage_type_int(value: StorageTypes = _MISSING_VALUE):
+    if value is _MISSING_VALUE:
         return _STORAGETYPE_MAP.values()
     return _STORAGETYPE_MAP.get(value)
 
@@ -71,8 +71,8 @@ def hour_format_int(value: HourFormat) -> int:
     ...
 
 
-def hour_format_int(value: HourFormat = MISSING):
-    if value is MISSING:
+def hour_format_int(value: HourFormat = _MISSING_VALUE):
+    if value is _MISSING_VALUE:
         return HOURFORMAT_MAP.values()
     return HOURFORMAT_MAP.get(value)
 

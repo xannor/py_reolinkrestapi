@@ -26,15 +26,10 @@ class GetAiStateRequest(RequestWithChannel, ai.GetAiStateRequest):
     COMMAND: Final = "GetAiState"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = self.COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def id(self):
@@ -66,15 +61,10 @@ class GetAiConfigRequest(RequestWithChannel, ai.GetAiConfigRequest):
     COMMAND: Final = "GetAiCfg"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = self.COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def id(self):
@@ -105,14 +95,13 @@ class SetAiConfigRequest(RequestWithChannel, ai.SetAiConfigRequest):
     _COMMAND_ID: Final = hash(COMMAND)
 
     def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ) -> None:
-        super().__init__()
-        self.command = self.COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+        self, /, channel_id: int = ..., response_type: ResponseTypes = ..., config: ai.Config = ...
+    ):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
+        if config and config is not ...:
+            self.config = config
 
     @property
     def id(self):
@@ -120,7 +109,7 @@ class SetAiConfigRequest(RequestWithChannel, ai.SetAiConfigRequest):
 
     @property
     def config(self):
-        return model.MutableConfig(self._get_parameter)
+        return model.MutableConfig(type(self)._parameter.fget.__get__(self))
 
     @config.setter
     def config(self, value):

@@ -1,20 +1,21 @@
 """REST Network Models"""
 
-from typing import TYPE_CHECKING, Callable, Final, Mapping, Protocol, Sequence, TypedDict, cast
+from typing import Final, Mapping, Protocol, Sequence, TypeAlias, TypedDict
+from typing_extensions import Unpack
 from async_reolink.api.network import typing as network_typing
 
-from .._utilities import providers
+from .._utilities.providers import value as providers, mangle
 
 from ..connection.model import RequestWithChannel
-
-from .. import model
 
 from ..network.typing import link_types_str
 
 # pylint: disable=missing-function-docstring
 
+_JSONDict: TypeAlias = dict[str, any]
 
-class IPInfo(providers.DictProvider[str, any], network_typing.IPInfo):
+
+class IPInfo(providers.Value[_JSONDict], network_typing.IPInfo):
     """REST IP Info"""
 
     class JSON(TypedDict):
@@ -33,37 +34,70 @@ class IPInfo(providers.DictProvider[str, any], network_typing.IPInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def gateway(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.gateway, "")
         return ""
 
     @property
     def address(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.address, "")
         return ""
 
     @property
     def address_mask(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.address_mask, "")
         return ""
 
 
-class _DNSList(providers.DictProvider[str, any], Sequence[str]):
+def _parseint(value: str, default=None):
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
-    __slots__ = ("__prefix",)
 
-    def __init__(self, prefix: str, value: providers.ProvidedDict[str, any] | None = None) -> None:
-        super().__init__(value)
+class _DNSList(providers.Value[_JSONDict], Sequence[str]):
+
+    __slots__ = ("__prefix", "__length")
+
+    def __init__(
+        self,
+        prefix: str,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
+        /,
+        **kwargs: any,
+    ) -> None:
+        super().__init__(value, **kwargs)
         self.__prefix = prefix
+        self.__length = -1
+
+    def __getitem__(self, key: int):
+        return self.__get_value__()[self.__prefix + key]
+
+    def __len__(self):
+        if self.__length > -1:
+            return self.__length
+        if not (value := self.__get_value__()):
+            return 0
+        _l = 0
+        for _k in value:
+            if (
+                _k.startswith(self.__prefix)
+                and (_i := _parseint(_k[len(self.__prefix) :])) is not None
+            ):
+                _l = max(_l, _i)
+        return _l
 
 
-class DNSInfo(providers.DictProvider[str, any], network_typing.DNSInfo):
+class DNSInfo(providers.Value[_JSONDict], network_typing.DNSInfo):
     """REST DNS Info"""
 
     class JSON(TypedDict):
@@ -81,22 +115,22 @@ class DNSInfo(providers.DictProvider[str, any], network_typing.DNSInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def auto(self):
-        return True if (value := self._provided_value) and value.get(self.Keys.auto, 0) else False
+        return True if (value := self.__get_value__()) and value.get(self.Keys.auto, 0) else False
 
     @property
     def dns(self):
-        return _DNSList(self.Keys.dns, lambda _: self._provided_value)
+        return _DNSList(self.Keys.dns, self.__get_value__)
 
 
 _DefaultLinkType: Final = network_typing.LinkTypes.DHCP
 _DefaultLinkTypeStr: Final = link_types_str(_DefaultLinkType)
 
 
-class LinkInfo(providers.DictProvider[str, any], network_typing.LinkInfo):
+class LinkInfo(providers.Value[_JSONDict], network_typing.LinkInfo):
     """REST Link Info"""
 
     class JSON(TypedDict):
@@ -119,47 +153,49 @@ class LinkInfo(providers.DictProvider[str, any], network_typing.LinkInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def active_link(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.active_link, "")
         return ""
 
     @property
     def mac(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.mac, "")
         return ""
 
     @property
     def type(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return network_typing.LinkTypes(value.get(self.Keys.type, _DefaultLinkTypeStr))
         return _DefaultLinkType
 
+    def _get_ip(self, create=False) -> IPInfo.JSON:
+        return self.lookup_value(self.__get_value__, self.Keys.ip, create=create, default=None)
+
     @property
-    def _static(self):
-        if value := self._provided_value:
-            return value.get(self.Keys.ip)
-        return None
+    def _ip(self):
+        return self._get_ip()
 
     @property
     def ip(self):
-        return IPInfo(lambda _: self._static)
+        return IPInfo(self._get_ip)
+
+    def _get_dns(self, create=False) -> DNSInfo.JSON:
+        return self.lookup_value(self.__get_value__, self.Keys.dns, create=create, default=None)
 
     @property
     def _dns(self):
-        if value := self._provided_value:
-            return value.get(self.Keys.dns)
-        return None
+        return self._get_dns()
 
     def dns(self):
-        return DNSInfo(lambda _: self._dns)
+        return DNSInfo(self._get_dns)
 
 
-class ChannelStatus(providers.DictProvider[str, any], network_typing.ChannelStatus):
+class ChannelStatus(providers.Value[_JSONDict], network_typing.ChannelStatus):
     """REST Channel Status"""
 
     class JSON(RequestWithChannel.Parameter.JSON):
@@ -178,32 +214,32 @@ class ChannelStatus(providers.DictProvider[str, any], network_typing.ChannelStat
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def channel_id(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.channel_id, 0)
         return 0
 
     @property
     def name(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.name, "")
         return ""
 
     @property
     def online(self):
-        return True if (value := self._provided_value) and value.get(self.Keys.online, 0) else False
+        return True if (value := self.__get_value__()) and value.get(self.Keys.online, 0) else False
 
     @property
     def type(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.type, "")
         return ""
 
 
-class ChannelStatuses(providers.DictProvider[str, any], Mapping[int, ChannelStatus]):
+class ChannelStatuses(providers.Value[_JSONDict], Mapping[int, ChannelStatus]):
     """Channel Statuses"""
 
     class JSON(TypedDict):
@@ -220,19 +256,18 @@ class ChannelStatuses(providers.DictProvider[str, any], Mapping[int, ChannelStat
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
-    @property
-    def _status(self):
-        if value := self._provided_value:
-            return value.get(self.Keys.status, [])
-        return []
+    def _get_status(self, create=False) -> list[ChannelStatus.JSON]:
+        return self.lookup_value(
+            self.__get_value__, self.Keys.status, create=create, default_factory=list
+        )
 
     def __getitem__(self, __k: int):
-        return ChannelStatus(lambda _: self._status[__k])
+        return ChannelStatus(self.lookup_factory(self._get_status, __k, default=None))
 
     def __iter__(self):
-        if not (channels := self._status):
+        if not (channels := self._get_status()):
             return
         for _c in channels:
             if (
@@ -242,7 +277,7 @@ class ChannelStatuses(providers.DictProvider[str, any], Mapping[int, ChannelStat
                 yield int(channel)
 
     def __contains__(self, __o: int):
-        if not (channels := self._status):
+        if not (channels := self._get_status()):
             return False
         for _c in channels:
             if (
@@ -254,7 +289,7 @@ class ChannelStatuses(providers.DictProvider[str, any], Mapping[int, ChannelStat
         return False
 
     def __len__(self):
-        if not (value := self.__value):
+        if not (value := self.__get_value__()):
             return 0
         return int(value.get(self.Keys.count, 0))
 
@@ -266,11 +301,11 @@ class UpdatableChannelStatuses(ChannelStatuses):
         if not isinstance(value, ChannelStatuses):
             raise TypeError("Can only update from another ChannelStatuses")
         # pylint: disable=protected-access
-        self._set_value(value._provided_value)
+        self.__set_value__(value.__get_value__())
         return self
 
 
-class P2PInfo(providers.DictProvider[str, any], network_typing.P2PInfo):
+class P2PInfo(providers.Value[_JSONDict], network_typing.P2PInfo):
     """REST P2P Info"""
 
     class JSON(TypedDict):
@@ -287,22 +322,22 @@ class P2PInfo(providers.DictProvider[str, any], network_typing.P2PInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def enabled(self):
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.enabled, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.enabled, 0) else False
         )
 
     @property
     def uid(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.uid, "")
         return ""
 
 
-class NetworkPort(providers.DictProvider[str, any], model._ManglesKeys, network_typing.NetworkPort):
+class NetworkPort(providers.Value[_JSONDict], network_typing.NetworkPort):
     """REST Network Port"""
 
     class JSON(TypedDict):
@@ -314,26 +349,33 @@ class NetworkPort(providers.DictProvider[str, any], model._ManglesKeys, network_
     class Keys(Protocol):
         """Keys"""
 
-        enabled: Final = "Enable"
-        value: Final = "Port"
+        enabled: Final = "enable"
+        value: Final = "port"
 
     __slots__ = ()
 
-    def __init__(self, prefix: str, value: providers.ProvidedDict[str, any] | None = None) -> None:
-        super().__init__(value)
-        model._ManglesKeys.__init__(self, prefix)
+    __slots__ = ("_mangle_key",)
 
-    _provided_value: JSON
+    def __init__(
+        self,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
+        /,
+        **kwargs: Unpack[mangle.mangler_kwargs],
+    ) -> None:
+        super().__init__(value, **{k: kwargs[k] for k in kwargs if k not in mangle.mangler_kwkeys})
+        self._mangle_key = mangle.mangler(**kwargs)
+
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def value(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self._mangle_key(self.Keys.value), 0)
         return 0
 
     @property
     def enabled(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             if (enabled := value.get(self._mangle_key(self.Keys.enabled))) is not None:
                 return True if enabled else False
             # older firmwares dont support Enable so the port cannot be disabled, so we default to true if Port exists
@@ -350,13 +392,13 @@ class NetworkPort(providers.DictProvider[str, any], model._ManglesKeys, network_
         return str(self.value) if self.enabled else ""
 
 
-class NetworkPorts(providers.DictProvider[str, any], network_typing.NetworkPorts):
+class NetworkPorts(providers.Value[_JSONDict], network_typing.NetworkPorts):
     """REST Network Ports"""
 
     __slots__ = ()
 
     def _port(self, prefix: str):
-        return NetworkPort(prefix, lambda _: self._provided_value)
+        return NetworkPort(self.__get_value__, prefix=prefix, titleCase=True)
 
     @property
     def media(self):
@@ -383,7 +425,7 @@ class NetworkPorts(providers.DictProvider[str, any], network_typing.NetworkPorts
         return self._port("rtmp")
 
 
-class WifiInfo(providers.DictProvider[str, any], network_typing.WifiInfo):
+class WifiInfo(providers.Value[_JSONDict], network_typing.WifiInfo):
     """REST Wifi Info"""
 
     class JSON(TypedDict):
@@ -400,16 +442,16 @@ class WifiInfo(providers.DictProvider[str, any], network_typing.WifiInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def ssid(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.ssid, "")
         return ""
 
     @property
     def password(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.password, "")
         return ""

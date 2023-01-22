@@ -36,6 +36,4 @@ class LED(BaseLED):
         return isinstance(response, led.GetWhiteLedResponse)
 
     def _create_set_white_led(self, info: led_types.WhiteLedInfo, channel_id: int):
-        request = led.SetWhiteLedRequest(channel_id=channel_id)
-        request.info.update(info)
-        return request
+        return led.SetWhiteLedRequest(info=info, channel_id=channel_id)

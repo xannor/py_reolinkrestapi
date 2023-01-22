@@ -24,6 +24,4 @@ class AI(BaseAI):
         return isinstance(response, ai.GetAiStateResponse)
 
     def _create_set_ai_config(self, channel: int, config: ai_types.Config):
-        request = ai.SetAiConfigRequest(channel_id=channel)
-        request.config.update(config)
-        return request
+        return ai.SetAiConfigRequest(channel_id=channel, config=config)

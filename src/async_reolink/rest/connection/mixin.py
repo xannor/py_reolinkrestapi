@@ -1,10 +1,12 @@
 """REST Connection"""
 from __future__ import annotations
+from functools import partial
 
 import inspect
-from json import JSONDecoder, loads as DEFAULT_JSON_DECODER
+from json import JSONDecoder, dumps as _DEFAULT_JSON_ENCODER, loads as DEFAULT_JSON_DECODER
 import logging
 from typing import (
+    Final,
     overload,
 )
 import aiohttp
@@ -18,21 +20,25 @@ from async_reolink.api.connection.mixin import Connection as BaseConnection
 from async_reolink.api import errors
 
 from async_reolink.api.const import DEFAULT_TIMEOUT
+from .._utilities.json import SmarterJSONEncoder
 
 from ..const import DEFAULT_HTTP_PORT, DEFAULT_HTTPS_PORT
 
 from .model import Response as RestResponse, ErrorResponse, ResponseWithCode
-from .typing import Encryption, SSLContextFactory, SessionFactory, WithConnection
+from ..connection.typing import Encryption, SSLContextFactory, SessionFactory, WithConnection
 
 from ..errors import CONNECTION_ERRORS, RESPONSE_ERRORS
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
 
+DEFAULT_JSON_ENCODER: Final = partial(_DEFAULT_JSON_ENCODER, cls=SmarterJSONEncoder)
+
 
 def _default_create_session(base_url: str, timeout: int, ssl: SSLContextFactory = None):
     return aiohttp.ClientSession(
         base_url=base_url,
+        json_serialize=DEFAULT_JSON_ENCODER,
         timeout=aiohttp.ClientTimeout(total=timeout),
         connector=aiohttp.TCPConnector(ssl=ssl(base_url) if ssl is not None else None),
     )
@@ -227,14 +233,7 @@ class Connection(BaseConnection, WithConnection):
                     allow_redirects=False,
                 )
             else:
-                data = self.__session.json_serialize(
-                    list(
-                        map(
-                            lambda r: r._get_request(),  # pylint: disable=protected-access
-                            args,
-                        )
-                    )
-                )
+                data = self.__session.json_serialize(args)
 
                 _LOGGER_DATA.debug("%s<-%s", url, data)
                 context = self.__session.post(

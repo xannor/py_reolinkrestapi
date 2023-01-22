@@ -10,7 +10,7 @@ class System(BaseSystem):
     """REST System Mixin"""
 
     def _create_get_capabilities(self, username: str | None):
-        return system.GetAbilitiesRequest(username)
+        return system.GetAbilitiesRequest(user_name=username)
 
     def _is_get_capabilities_response(self, response: Response):
         return isinstance(response, system.GetAbilitiesResponse)

@@ -1,6 +1,6 @@
 """System models"""
 
-from typing import Callable, Final, Protocol, TypedDict
+from typing import Callable, Final, Protocol, TypeAlias, TypedDict
 from async_reolink.api.system import command as system
 from async_reolink.api.system import typing as sys_typing
 from async_reolink.api.typing import WeekDays
@@ -17,13 +17,15 @@ from ..system.typing import (
 
 from .. import model
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
+
+_JSONDict: TypeAlias = dict[str, any]
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=too-few-public-methods
 
 
-class UserInfo(providers.DictProvider[str, any]):
+class UserInfo(providers.Value[_JSONDict]):
     class JSON(TypedDict):
         """JSON"""
 
@@ -36,11 +38,11 @@ class UserInfo(providers.DictProvider[str, any]):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def user_name(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.user_name, "")
         return ""
 
@@ -48,22 +50,23 @@ class UserInfo(providers.DictProvider[str, any]):
 class MutableUserInfo(UserInfo):
     __slots__ = ()
 
-    def _get_provided_value(self, create=False):
-        if (value := super()._get_provided_value(create)) is not None or not create:
-            return value
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
         value = {}
-        self._set_provided_value(value)
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
         return value
 
     @UserInfo.user_name.setter
     def user_name(self, value):
-        self._get_provided_value(True)[self.Keys.user_name] = str(value)
+        self.__get_value__(True)[self.Keys.user_name] = str(value)
 
 
-class DeviceInfo(providers.DictProvider[str, any], sys_typing.DeviceInfo):
+class DeviceInfo(providers.Value[_JSONDict], sys_typing.DeviceInfo):
     """Device Info"""
 
-    class IO(providers.DictProvider[str, any], sys_typing.DeviceInfo.IO):
+    class IO(providers.Value[_JSONDict], sys_typing.DeviceInfo.IO):
         """IO"""
 
         class JSON(TypedDict):
@@ -80,21 +83,21 @@ class DeviceInfo(providers.DictProvider[str, any], sys_typing.DeviceInfo):
 
         __slots__ = ()
 
-        _provided_value: JSON
+        __get_value__: providers.FactoryValue[JSON]
 
         @property
         def inputs(self):
-            if value := self._provided_value:
+            if value := self.__get_value__():
                 return value.get(self.Keys.inputs, 0)
             return 0
 
         @property
         def outputs(self):
-            if value := self._provided_value:
+            if value := self.__get_value__():
                 return value.get(self.Keys.outputs, 0)
             return 0
 
-    class Version(providers.DictProvider[str, any], sys_typing.DeviceInfo.Version):
+    class Version(providers.Value[_JSONDict], sys_typing.DeviceInfo.Version):
         """Versions"""
 
         class JSON(TypedDict):
@@ -115,29 +118,29 @@ class DeviceInfo(providers.DictProvider[str, any], sys_typing.DeviceInfo):
 
         __slots__ = ()
 
-        _provided_value: JSON
+        __get_value__: providers.FactoryValue[JSON]
 
         @property
         def firmware(self):
-            if value := self._provided_value:
+            if value := self.__get_value__():
                 return value.get(self.Keys.firmware, "")
             return ""
 
         @property
         def framework(self):
-            if value := self._provided_value:
+            if value := self.__get_value__():
                 return value.get(self.Keys.framework, "")
             return ""
 
         @property
         def hardware(self):
-            if value := self._provided_value:
+            if value := self.__get_value__():
                 return value.get(self.Keys.hardware, "")
             return ""
 
         @property
         def config(self):
-            if value := self._provided_value:
+            if value := self.__get_value__():
                 return value.get(self.Keys.config, "")
             return ""
 
@@ -177,83 +180,83 @@ class DeviceInfo(providers.DictProvider[str, any], sys_typing.DeviceInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def io(self):
-        return DeviceInfo.IO(self._get_provided_value)
+        return DeviceInfo.IO(self.__get_value__)
 
     @property
     def version(self):
-        return DeviceInfo.Version(self._get_provided_value)
+        return DeviceInfo.Version(self.__get_value__)
 
     @property
     def audio_sources(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.audio_sources, 0)
         return 0
 
     @property
     def build_day(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.build_day, "")
         return ""
 
     @property
     def channels(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.channels, 0)
         return 0
 
     @property
     def detail(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.detail, "")
         return ""
 
     @property
     def disks(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.disks, 0)
         return 0
 
     @property
     def model(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.model, "")
         return ""
 
     @property
     def name(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.name, "")
         return ""
 
     @property
     def type(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.type, "")
         return ""
 
     @property
     def wifi(self):
-        return True if (value := self._provided_value) and value.get(self.Keys.wifi, 0) else False
+        return True if (value := self.__get_value__()) and value.get(self.Keys.wifi, 0) else False
 
     @property
     def exact_type(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.exact_type, "")
         return ""
 
     @property
     def serial(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.serial, "")
         return ""
 
     @property
     def pak_suffix(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.pak_suffix, "")
         return ""
 
@@ -261,7 +264,7 @@ class DeviceInfo(providers.DictProvider[str, any], sys_typing.DeviceInfo):
         if not isinstance(value, type(self)):
             raise TypeError("Can only update from another DeviceInfo")
         # pylint: disable=protected-access
-        self._set_provided_value(value._provided_value)
+        self.__set_value__(value.__get_value__())
         return self
 
 
@@ -269,7 +272,7 @@ _DefaultWeekday: Final = WeekDays.SUNDAY
 _DefaultWeekdayInt: Final = weekday_int(_DefaultWeekday)
 
 
-class DaylightSavingsTimeInfo(providers.DictProvider[str, any], system.DaylightSavingsTimeInfo):
+class DaylightSavingsTimeInfo(providers.Value[_JSONDict], system.DaylightSavingsTimeInfo):
     """Dalight Savings Time Info"""
 
     class TimeInfo(model.SimpleTime, system.DaylightSavingsTimeInfo.TimeInfo):
@@ -278,36 +281,36 @@ class DaylightSavingsTimeInfo(providers.DictProvider[str, any], system.DaylightS
         class JSON(model.SimpleTime.JSON):
             """JSON"""
 
-            Mon: int
-            Week: int
-            Weekday: int
+            mon: int
+            week: int
+            weekday: int
 
         class Keys(model.SimpleTime.Keys, Protocol):
             """Keys"""
 
-            month: Final = "Mon"
-            week: Final = "Week"
-            weekday: Final = "Weekday"
+            month: Final = "mon"
+            week: Final = "week"
+            weekday: Final = "weekday"
 
             __all__ = model.SimpleTime.Keys.__all__ + (month, week, weekday)
 
-        _provided_value: JSON
+        __get_value__: providers.FactoryValue[JSON]
 
         @property
         def month(self):
-            if value := self._provided_value:
+            if value := self.__get_value__():
                 return value.get(self._mangle_key(self.Keys.month), 0)
             return 0
 
         @property
-        def week(self, value: int, _: bool):
-            if value := self._provided_value:
+        def week(self):
+            if value := self.__get_value__():
                 return value.get(self._mangle_key(self.Keys.week), 0)
             return 0
 
         @property
         def weekday(self):
-            if value := self._provided_value:
+            if value := self.__get_value__():
                 return int_weekday(value.get(self._mangle_key(self.Keys.week), _DefaultWeekdayInt))
             return _DefaultWeekday
 
@@ -325,27 +328,27 @@ class DaylightSavingsTimeInfo(providers.DictProvider[str, any], system.DaylightS
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def enabled(self):
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.enabled, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.enabled, 0) else False
         )
 
     @property
     def hour_offset(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.hour_offset, 0)
         return 0
 
     @property
     def start(self):
-        return DaylightSavingsTimeInfo.TimeInfo(self._get_provided_value, "start")
+        return DaylightSavingsTimeInfo.TimeInfo(self.__get_value__, prefix="start", titleCase=True)
 
     @property
     def end(self):
-        return DaylightSavingsTimeInfo.TimeInfo(self._get_provided_value, "end")
+        return DaylightSavingsTimeInfo.TimeInfo(self.__get_value__, prefix="end", titleCase=True)
 
 
 _DefaultHourFormat: Final = sys_typing.HourFormat.HR_24
@@ -373,24 +376,24 @@ class TimeInfo(model.DateTime, system.TimeInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def hour_format(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return int_hour_format(value.get(self.Keys.hour_format, _DefaultHourFormat))
         return _DefaultHourFormat
 
     @property
     def date_format(self):
         _default = "DD/MM/YYYY"
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.date_format, _default)
         return _default
 
     @property
     def timezone_offset(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.timezone_offset, 0)
         return 0
 
@@ -399,7 +402,7 @@ _DefaultStorageType: Final = sys_typing.StorageTypes.SDC
 _DefaultStorageTypeInt: Final = storage_type_int(_DefaultStorageType)
 
 
-class StorageInfo(providers.DictProvider[str, any], sys_typing.StorageInfo):
+class StorageInfo(providers.Value[_JSONDict], sys_typing.StorageInfo):
     """REST Storage Info"""
 
     class JSON(TypedDict):
@@ -424,40 +427,40 @@ class StorageInfo(providers.DictProvider[str, any], sys_typing.StorageInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def id(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.id, 0)
         return 0
 
     @property
     def capacity(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.capacity, 0)
         return 0
 
     @property
     def formatted(self) -> bool:
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.formatted, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.formatted, 0) else False
         )
 
     @property
     def mounted(self) -> bool:
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.mounted, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.mounted, 0) else False
         )
 
     @property
     def free_space(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.free_space, 0)
         return 0
 
     @property
     def type(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return int_storage_type(value.get(self.Keys.type, _DefaultStorageTypeInt))
         return _DefaultStorageType

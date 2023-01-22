@@ -17,13 +17,6 @@ for m, v in _LIGHTSTATES_MAP.items():
     led_typing.LightStates._value2member_map_[v] = m
 
 
-class _Missing:
-    pass
-
-
-_MISSING: Final = _Missing()
-
-
 @overload
 def light_state_str() -> ValuesView[str]:
     ...
@@ -34,7 +27,7 @@ def light_state_str(value: led_typing.LightStates) -> str:
     ...
 
 
-def light_state_str(value: led_typing.LightStates = _MISSING):
-    if value is _MISSING:
+def light_state_str(value: led_typing.LightStates = ...):
+    if value is ...:
         return _LIGHTSTATES_MAP.values()
     return _LIGHTSTATES_MAP.get(value)

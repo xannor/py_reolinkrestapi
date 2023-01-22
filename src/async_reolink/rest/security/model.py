@@ -5,15 +5,17 @@
 # pylint:disable=missing-function-docstring
 
 from dataclasses import dataclass
-from typing import Callable, Final, Protocol, TypedDict
+from typing import Callable, Final, Protocol, TypeAlias, TypedDict
 
 from async_reolink.api.security import typing as secuirty_typing
 from ..security.typing import level_type_str
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
+
+_JSONDict: TypeAlias = dict[str, any]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AuthenticationId(secuirty_typing.AuthenticationId):
     """Authentication Id"""
 
@@ -21,7 +23,7 @@ class AuthenticationId(secuirty_typing.AuthenticationId):
     strong: int = 0
 
 
-class LoginToken(providers.DictProvider[str, any]):
+class LoginToken(providers.Value[_JSONDict]):
     """Login Token"""
 
     class JSON(TypedDict):
@@ -38,17 +40,17 @@ class LoginToken(providers.DictProvider[str, any]):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def lease_time(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.lease_time, 0)
         return 0
 
     @property
     def name(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.name, "")
         return ""
 
@@ -70,22 +72,22 @@ class LoginTokenV2(LoginToken):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def check(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.check, 0)
         return 0
 
     @property
     def count(self) -> int:
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.count, 0)
         return 0
 
 
-class DigestInfo(providers.DictProvider[str, any]):
+class DigestInfo(providers.Value[_JSONDict]):
     """Digest Info"""
 
     class JSON(TypedDict):
@@ -116,59 +118,59 @@ class DigestInfo(providers.DictProvider[str, any]):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def cnonce(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.cnonce, "")
         return ""
 
     @property
     def method(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.method, "")
         return ""
 
     @property
     def nc(self):  # pylint: disable=invalid-name
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.nc, "")
         return ""
 
     @property
     def nonce(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.nonce, "")
         return ""
 
     @property
     def qop(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.qop, "")
         return ""
 
     @property
     def realm(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.realm, "")
         return ""
 
     @property
     def response(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.response, "")
         return ""
 
     @property
     def uri(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.uri, "")
         return ""
 
     @property
     def user_name(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.user_name, "")
         return ""
 
@@ -177,7 +179,7 @@ _DefaultLevelType = secuirty_typing.LevelTypes.GUEST
 _DefaultLevelTypeStr = level_type_str(_DefaultLevelType)
 
 
-class UserInfo(providers.DictProvider[str, any], secuirty_typing.UserInfo):
+class UserInfo(providers.Value[_JSONDict], secuirty_typing.UserInfo):
     """REST User Record"""
 
     class JSON(TypedDict):
@@ -194,16 +196,16 @@ class UserInfo(providers.DictProvider[str, any], secuirty_typing.UserInfo):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def user_name(self) -> str:
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.user_name, "")
         return ""
 
     @property
     def level(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return secuirty_typing.LevelTypes(value.get(self.Keys.level, _DefaultLevelTypeStr))
         return _DefaultLevelType

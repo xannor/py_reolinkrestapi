@@ -37,7 +37,7 @@ class Network(network.Network, WithSecurity):
         return isinstance(response, command.GetNetworkPortsResponse)
 
     def _create_get_rtsp_urls(self, channel_id: int):
-        return command.GetRTSPUrlsRequest()
+        return command.GetRTSPUrlsRequest(channel_id=channel_id)
 
     def _is_get_rtsp_urls_response(self, response: Response):
         return isinstance(response, command.GetRTSPUrlsResponse)

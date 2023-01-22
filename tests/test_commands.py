@@ -11,11 +11,9 @@ _EXPECTED_JSON: Final = '{"cmd": "test", "action": 1, "param": {"channel": 1}}'
 
 
 def test_request():
-    req = model.RequestWithChannel()
-    req.command = "test"
+    req = model.RequestWithChannel(command="test", channel_id=1)
     req.response_type = model.ResponseTypes.DETAILED
-    req.channel_id = 1
 
-    assert isinstance(req._provided_value, dict)
+    assert isinstance(req.__get_value__(), dict)
     json = dumps(req, cls=SmarterJSONEncoder)
     assert json == _EXPECTED_JSON

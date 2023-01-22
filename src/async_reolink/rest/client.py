@@ -14,6 +14,8 @@ from .led.mixin import LED
 
 from .network.mixin import Network
 
+from .ptz.mixin import PTZ
+
 from .security.mixin import Security
 
 from .system.mixin import System
@@ -25,5 +27,7 @@ from .record.mixin import Record
 from .__version__ import __version__
 
 
-class Client(Connection, AI, Alarm, Encoding, LED, Security, Network, Record, System, BaseClient):
+class Client(
+    Connection, AI, Alarm, Encoding, LED, Security, Network, PTZ, Record, System, BaseClient
+):
     """Rest API Client"""

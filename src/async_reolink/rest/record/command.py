@@ -2,9 +2,9 @@
 
 from typing import Callable, Final, Protocol, Sequence, TypeVar, TypedDict
 from async_reolink.api.record import command as record
-from async_reolink.api.record import typing
+from async_reolink.api.record import typing as rec_typing
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
 
 from .model import MutableSearch, SearchStatus, File
 
@@ -25,15 +25,10 @@ class GetSnapshotRequest(RequestWithChannel, record.GetSnapshotRequest):
     COMMAND: Final = "Snap"
     _COMMAND_ID: Final = hash(COMMAND)
 
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+    def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
 
     @property
     def raw_parameter(self):
@@ -71,26 +66,33 @@ class SearchRecordingsRequest(Request, record.SearchRecordingsRequest):
 
     COMMAND: Final = "Search"
 
+    _get_parameter: providers.FactoryValue[Parameter.JSON]
     _parameter: Parameter.JSON
 
     def __init__(
         self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
+        /,
+        search: record.Search = ...,
+        channel_id: int = ...,
+        response_type: ResponseTypes = ...,
     ):
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
+        super().__init__(
+            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+        )
+        if search and search is not ...:
+            self.search = search
 
-    def _get_search(self, create=False):
-        if not (value := self._get_parameter(create)):
-            return None
-        if not (search := value.get(self.Keys.parameter)) and create:
-            search: dict = value.setdefault(self.Keys.parameter, {})
-        return search
+    def _get_search(self, create=False) -> Parameter.Search.JSON:
+        return self.lookup_value(
+            self._get_parameter,
+            self.Parameter.Keys.search,
+            create=create,
+            default_factory=lambda: dict() if create else None,
+        )
 
-    _search: Parameter.Search.JSON = property(_get_search)
+    @property
+    def _search(self):
+        return self._get_search()
 
     @property
     def channel_id(self):
@@ -114,26 +116,22 @@ class SearchRecordingsRequest(Request, record.SearchRecordingsRequest):
 _T = TypeVar("_T")
 
 
-class _FactorySequence(providers.ListProvider[any], Sequence[_T]):
+class _FactorySequence(providers.Value[list], Sequence[_T]):
 
     __slots__ = ("__factory",)
 
     def __init__(
         self,
-        value: providers.ProvidedList[any],
-        factory: Callable[[providers.ProvidedValue[any] | None], _T],
+        value: providers.FactoryValue[list] | list | None,
+        factory: Callable[[providers.FactoryValue[any] | None], _T],
+        /,
+        **kwargs: any,
     ) -> None:
-        super().__init__(value)
+        super().__init__(value, **kwargs)
         self.__factory = factory
 
-    def _get_item(self, __k: int) -> dict:
-        return value[__k] if (value := self._value) is not None else None
-
     def __getitem__(self, __k: int):
-        def _factory():
-            return self._get_item(__k)
-
-        return self.__factory(_factory)
+        return self.__factory(self.lookup_factory(self.__get_value__, __k, default=None))
 
     def __len__(self):
         if (_list := self._value) is None:
@@ -180,14 +178,17 @@ class SearchRecordingsResponse(RestResponse, record.SearchRecordingsResponse):
 
     __slots__ = ()
 
+    _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
-    def _get_search_result(self, create=False) -> dict:
-        if value := self._get_provided_value(create):
-            return value.get(self.Value.Keys.search_result)
-        return None
+    def _get_search_result(self, create=False) -> Value.SearchResult.JSON:
+        return self.lookup_value(
+            self._get_value, self.Value.Keys.search_result, create=create, default=None
+        )
 
-    _search_result: Value.SearchResult.JSON = property(_get_search_result)
+    @property
+    def _search_result(self):
+        return self._get_search_result()
 
     @property
     def channel_id(self):
@@ -197,8 +198,18 @@ class SearchRecordingsResponse(RestResponse, record.SearchRecordingsResponse):
 
     @property
     def status(self):
-        return _FactorySequence(lambda _: self._search_result, SearchStatus)
+        return _FactorySequence(
+            self.lookup_factory(
+                self._get_search_result, self.Value.SearchResult.Keys.status, default=None
+            ),
+            SearchStatus,
+        )
 
     @property
     def files(self):
-        return _FactorySequence(lambda _: self._search_result, File)
+        return _FactorySequence(
+            self.lookup_factory(
+                self._get_search_result, self.Value.SearchResult.Keys.files, default=None
+            ),
+            File,
+        )

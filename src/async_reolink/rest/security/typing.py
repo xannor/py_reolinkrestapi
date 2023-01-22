@@ -1,5 +1,6 @@
 """REST Securiy typings"""
 
+from enum import IntEnum, auto
 from types import MappingProxyType
 from typing import Final, Protocol, ValuesView, overload
 from async_reolink.api.security.typing import LevelTypes
@@ -12,13 +13,6 @@ for _k, _v in _LEVELTYPE_MAP.items():
     LevelTypes._value2member_map_[_v] = _k
 
 
-class _Missing:
-    pass
-
-
-_MISSING: Final = _Missing()
-
-
 @overload
 def level_type_str() -> ValuesView[str]:
     ...
@@ -29,8 +23,8 @@ def level_type_str(value: LevelTypes) -> str:
     ...
 
 
-def level_type_str(value: LevelTypes = _Missing):
-    if value is _MISSING:
+def level_type_str(value: LevelTypes = ...):
+    if value is ...:
         return _LEVELTYPE_MAP.values()
     return _LEVELTYPE_MAP.get(value)
 
@@ -41,3 +35,11 @@ class WithSecurity(Protocol):
     @property
     def _auth_token(self) -> str:
         ...
+
+
+class LoginType(IntEnum):
+    """Login Type"""
+
+    NORMAL = 0
+    SECURED = auto()
+    """Work In Progress"""

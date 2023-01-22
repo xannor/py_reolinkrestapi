@@ -57,13 +57,10 @@ class Security(BaseSecurity, WithConnection, WithSecurity):
         return self.__auth_id
 
     def _create_authentication_id(self, username: str, password: str = None):
-        weak = hash(username)
-        if not password:
-            return AuthenticationId(weak)
-        return AuthenticationId(weak, weak ^ hash(password))
+        return AuthenticationId(hash(username), hash(password))
 
     def _create_login(self, username: str, password: str):
-        return command.LoginRequest(username, password)
+        return command.LoginRequest(user_name=username, password=password)
 
     def _is_login_response(self, response: Response):
         return isinstance(response, command.LoginResponse)

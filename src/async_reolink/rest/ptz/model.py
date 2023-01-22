@@ -5,11 +5,13 @@ from typing import (
     MutableSequence,
     Protocol,
     Sequence,
+    TypeAlias,
     TypedDict,
 )
 from async_reolink.api.ptz import typing as ptz_typing
 
-from .._utilities import providers
+from .._utilities.providers import value as providers
+from .._utilities import copy
 
 from .. import model
 
@@ -28,7 +30,10 @@ class PositionKeys(Protocol):
     position: Final = "pos"
 
 
-class ZoomFocus(providers.DictProvider[str, any], ptz_typing.ZoomFocus):
+_JSONDict: TypeAlias = dict[str, any]
+
+
+class ZoomFocus(providers.Value[_JSONDict], ptz_typing.ZoomFocus):
     """REST PTZ Zoom/Focus"""
 
     class JSON(TypedDict):
@@ -45,22 +50,22 @@ class ZoomFocus(providers.DictProvider[str, any], ptz_typing.ZoomFocus):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def focus(self):
-        if (value := self._provided_value) and (pos := value.get(self.Keys.focus)):
+        if (value := self.__get_value__()) and (pos := value.get(self.Keys.focus)):
             return pos.get(PositionKeys.position, 0)
         return 0
 
     @property
     def zoom(self):
-        if (value := self._provided_value) and (pos := value.get(self.Keys.zoom)):
+        if (value := self.__get_value__()) and (pos := value.get(self.Keys.zoom)):
             return pos.get(PositionKeys.position, 0)
         return 0
 
 
-class Preset(providers.DictProvider[str, any], ptz_typing.Preset):
+class Preset(providers.Value[_JSONDict], ptz_typing.Preset):
     """REST PTZ Preset"""
 
     class JSON(TypedDict):
@@ -79,23 +84,23 @@ class Preset(providers.DictProvider[str, any], ptz_typing.Preset):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def id(self):  # pylint: disable=invalid-name
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.id, 0)
         return 0
 
     @property
     def enabled(self):
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.enabled, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.enabled, 0) else False
         )
 
     @property
     def name(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.name, "")
         return ""
 
@@ -105,29 +110,30 @@ class MutablePreset(Preset):
 
     __slots__ = ()
 
-    def _get_provided_value(self, create=False):
-        if (value := super()._get_provided_value(create)) or not create:
-            return value
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
         value = {}
-        self._set_provided_value(value)
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
         return value
 
     @Preset.id.setter
     def id(self, value):
-        self._get_provided_value(True)[self.Keys.id] = int(value)
+        self.__get_value__(True)[self.Keys.id] = int(value)
 
     @Preset.enabled.setter
     def enabled(self, value):
-        self._get_provided_value(True)[self.Keys.enabled] = int(value)
+        self.__get_value__(True)[self.Keys.enabled] = int(value)
 
     @Preset.name.setter
     def name(self, value):
-        self._get_provided_value(True)[self.Keys.name] = str(value)
+        self.__get_value__(True)[self.Keys.name] = str(value)
 
     def update(self, value: ptz_typing.Preset):
         if isinstance(value, Preset):
-            if _d := value._provided_value:
-                self._get_provided_value(True).update(_d)
+            if _d := value.__get_value__():
+                self.__get_value__(True).update(_d)
             return
         try:
             self.name = value.name
@@ -147,7 +153,7 @@ class MutablePreset(Preset):
             pass
 
 
-class PatrolPreset(providers.DictProvider[str, any], ptz_typing.PatrolPreset):
+class PatrolPreset(providers.Value[_JSONDict], ptz_typing.PatrolPreset):
     """REST PTZ Patrol Preset"""
 
     class JSON(TypedDict):
@@ -166,23 +172,23 @@ class PatrolPreset(providers.DictProvider[str, any], ptz_typing.PatrolPreset):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
-    def preset_id(self) -> int:
-        if value := self._provided_value:
+    def preset_id(self):
+        if value := self.__get_value__():
             return value.get(self.Keys.preset_id, 0)
         return 0
 
     @property
     def dwell_time(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.dwell_time, 0)
         return 0
 
     @property
     def speed(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.speed, 0)
         return 0
 
@@ -192,29 +198,30 @@ class MutablePatrolPreset(PatrolPreset):
 
     __slots__ = ()
 
-    def _get_provided_value(self, create=False):
-        if (value := super()._get_provided_value(create)) or not create:
-            return value
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
         value = {}
-        self._set_provided_value(value)
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
         return value
 
     @PatrolPreset.preset_id.setter
     def preset_id(self, value):
-        self._get_provided_value(True)[self.Keys.preset_id] = int(value)
+        self.__get_value__(True)[self.Keys.preset_id] = int(value)
 
     @PatrolPreset.dwell_time.setter
     def dwell_time(self, value):
-        self._get_provided_value(True)[self.Keys.dwell_time] = int(value)
+        self.__get_value__(True)[self.Keys.dwell_time] = int(value)
 
     @PatrolPreset.speed.setter
     def speed(self, value):
-        self._get_provided_value(True)[self.Keys.speed] = int(value)
+        self.__get_value__(True)[self.Keys.speed] = int(value)
 
     def update(self, value: ptz_typing.PatrolPreset):
         if isinstance(value, PatrolPreset):
-            if _d := value._provided_value:
-                self._get_provided_value(True).update(_d)
+            if _d := value.__get_value__():
+                self.__get_value__(True).update(_d)
             return
         try:
             self.dwell_time = value.dwell_time
@@ -230,14 +237,14 @@ class MutablePatrolPreset(PatrolPreset):
             pass
 
 
-class _PatrolPresets(providers.ListProvider[dict[str, any]], Sequence[PatrolPreset]):
+class _PatrolPresets(providers.Value[list], Sequence[PatrolPreset]):
     __slots__ = ()
 
     def __getitem__(self, __k: int):
-        return PatrolPreset(lambda _: self._get_index_value(self._get_provided_value, __k))
+        return PatrolPreset(self.lookup_factory(self.__get_value__, __k, default=None))
 
     def __len__(self) -> int:
-        if (value := self._provided_value) is None:
+        if (value := self.__get_value__()) is None:
             return 0
         return len(value)
 
@@ -245,17 +252,20 @@ class _PatrolPresets(providers.ListProvider[dict[str, any]], Sequence[PatrolPres
 class _MutablePatrolPresets(_PatrolPresets, MutableSequence[MutablePatrolPreset]):
     __slots__ = ()
 
-    def _get_provided_value(self, create=False):
-        if (value := super()._get_provided_value(create)) or not create:
-            return value
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
         value = []
-        self._set_provided_value(value)
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
         return value
 
     def __getitem__(self, __k: int):
         return MutablePatrolPreset(
-            lambda create: self._get_index_value(
-                self._get_provided_value, __k, create, lambda: dict() if create else None
+            self.lookup_factory(
+                self.__get_value__,
+                __k,
+                default_factory=MutablePatrolPreset.__default_factory__.__get__(type),
             )
         )
 
@@ -264,55 +274,43 @@ class _MutablePatrolPresets(_PatrolPresets, MutableSequence[MutablePatrolPreset]
             value = MutablePatrolPreset()
             value.update(__v)
             __v = value
-        _d = __v._get_provided_value(True)
+        _d = __v.__get_value__(True)
         if _d is None:
             _d = {}
-        self._get_provided_value(True)[__k] = _d
+        self.__get_value__(True)[__k] = _d
 
     def append(self, value: ptz_typing.PatrolPreset) -> None:
         self[len(self)] = value
 
     def insert(self, index: int, value: ptz_typing.PatrolPreset):
-        if (__list := self._get_provided_value(True)) is None:
+        if (__list := self.__get_value__(True)) is None:
             raise AttributeError()
         if not isinstance(value, PatrolPreset):
-            __provided_value = MutablePatrolPreset()
-            __provided_value.update(value)
-            value = __provided_value
-        _d = value._get_provided_value(True)
-        if _d is None:
-            _d = {}
+            __value = MutablePatrolPreset()
+            __value.update(value)
+            _d = __value.__get_value__(True)
+        else:
+            _d = copy.copy(value.__get_value__(True))
+            if _d is None:
+                _d = {}
         __list.insert(index, _d)
 
     def clear(self) -> None:
-        if _l := self._provided_value:
+        if _l := self.__get_value__():
             _l.clear()
 
     def update(self, value: Sequence[ptz_typing.PatrolPreset]):
-        if not (_u := self._get_provided_value(True)):
+        if not (_u := self.__get_value__(True)):
             return
         if isinstance(value, _PatrolPresets):
-            if _l := value._provided_value:
-                _u[:] = _l[:]
+            if _l := value.__get_value__():
+                copy.update(_u, _l)
             return
         for i, _p in enumerate(value):
-            if isinstance(_p, PatrolPreset):
-                if not (_d := _p._get_provided_value(True)):
-                    _d = {}
-                _u[i] = _d
-                continue
-            try:
-                if _u[i] is None:
-                    _u[i] = {}
-            except IndexError:
-                _u[i] = {}
-            MutablePatrolPreset(lambda _: _u[i]).update(_p)
-        i = len(value)
-        if len(_u) > i:
-            del _u[i:]
+            self[i].update(_p)
 
 
-class Patrol(providers.DictProvider[str, any], ptz_typing.Patrol):
+class Patrol(providers.Value[_JSONDict], ptz_typing.Patrol):
     """REST PTZ Patrol"""
 
     class JSON(Preset.JSON):
@@ -329,37 +327,36 @@ class Patrol(providers.DictProvider[str, any], ptz_typing.Patrol):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def id(self):  # pylint: disable=invalid-name
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.id, 0)
         return 0
 
     @property
     def enabled(self):
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.enabled, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.enabled, 0) else False
         )
 
     @property
     def name(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.name, "")
         return ""
 
-    def _get_presets(self, create=False) -> list[dict[str, any]]:
-        return self._get_key_value(self._get_provided_value, self.Keys.presets, default=None)
-
     @property
     def presets(self):
-        return _PatrolPresets(self._get_presets)
+        return _PatrolPresets(
+            self.lookup_factory(self.__get_value__, self.Keys.presets, default=None)
+        )
 
     @property
     def running(self):
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.running, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.running, 0) else False
         )
 
 
@@ -368,33 +365,35 @@ class MutablePatrol(Patrol):
 
     __slots__ = ()
 
-    def _get_provided_value(self, create=False):
-        if (value := super()._get_provided_value(create)) is not None or not create:
-            return value
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
         value = {}
-        self._set_provided_value(value)
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
         return value
 
     @Patrol.id.setter
     def id(self, value):
-        self._get_provided_value(True)[self.Keys.id] = int(value)
+        self.__get_value__(True)[self.Keys.id] = int(value)
 
     @Patrol.enabled.setter
     def enabled(self, value):
-        self._get_provided_value(True)[self.Keys.enabled] = int(value)
+        self.__get_value__(True)[self.Keys.enabled] = int(value)
 
     @Patrol.name.setter
     def name(self, value):
-        self._get_provided_value(True)[self.Keys.name] = str(value)
-
-    def _get_presets(self, create=False) -> list[dict[str, any]]:
-        return self._get_key_value(
-            self._get_provided_value, self.Keys.presets, create, lambda: list() if create else None
-        )
+        self.__get_value__(True)[self.Keys.name] = str(value)
 
     @property
     def presets(self):
-        return _MutablePatrolPresets(self._get_presets)
+        return _MutablePatrolPresets(
+            self.lookup_factory(
+                self.__get_value__,
+                self.Keys.presets,
+                default_factory=_MutablePatrolPresets.__default_factory__.__get__(type),
+            )
+        )
 
     @presets.setter
     def presets(self, value):
@@ -402,12 +401,12 @@ class MutablePatrol(Patrol):
 
     @Patrol.running.setter
     def running(self, value):
-        self._get_provided_value(True)[self.Keys.running] = int(value)
+        self.__get_value__(True)[self.Keys.running] = int(value)
 
     def update(self, value: ptz_typing.Patrol):
         if isinstance(value, Patrol):
-            if _d := value._provided_value:
-                self._get_provided_value(True).update(_d)
+            if _d := value.__get_value__() and (_u := self.__get_value__(True)) is not None:
+                copy.update(_u, _d)
             return
         try:
             self.id = value.id
@@ -431,7 +430,7 @@ class MutablePatrol(Patrol):
             pass
 
 
-class Track(providers.DictProvider[str, any], ptz_typing.Track):
+class Track(providers.Value[_JSONDict], ptz_typing.Track):
     """REST Track (Tattern)"""
 
     class JSON(Preset.JSON):
@@ -446,30 +445,30 @@ class Track(providers.DictProvider[str, any], ptz_typing.Track):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def id(self):  # pylint: disable=invalid-name
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.id, 0)
         return 0
 
     @property
     def enabled(self):
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.enabled, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.enabled, 0) else False
         )
 
     @property
     def name(self):
-        if value := self._provided_value:
+        if value := self.__get_value__():
             return value.get(self.Keys.name, "")
         return ""
 
     @property
     def running(self):
         return (
-            True if (value := self._provided_value) and value.get(self.Keys.running, 0) else False
+            True if (value := self.__get_value__()) and value.get(self.Keys.running, 0) else False
         )
 
 
@@ -478,33 +477,34 @@ class MutableTrack(Track):
 
     __slots__ = ()
 
-    def _get_provided_value(self, create=False):
-        if (value := super()._get_provided_value(create)) is not None or not create:
-            return value
+    def __default_factory__(self, create=False):
+        if not create:
+            return None
         value = {}
-        self._set_provided_value(value)
+        if self is not None and not isinstance(self, type):
+            self.__set_value__(value)
         return value
 
     @Patrol.id.setter
     def id(self, value):
-        self._get_provided_value(True)[self.Keys.id] = int(value)
+        self.__get_value__(True)[self.Keys.id] = int(value)
 
     @Patrol.enabled.setter
     def enabled(self, value):
-        self._get_provided_value(True)[self.Keys.enabled] = int(value)
+        self.__get_value__(True)[self.Keys.enabled] = int(value)
 
     @Patrol.name.setter
     def name(self, value):
-        self._get_provided_value(True)[self.Keys.name] = str(value)
+        self.__get_value__(True)[self.Keys.name] = str(value)
 
     @Patrol.running.setter
     def running(self, value):
-        self._get_provided_value(True)[self.Keys.running] = int(value)
+        self.__get_value__(True)[self.Keys.running] = int(value)
 
     def update(self, value: ptz_typing.Track):
         if isinstance(value, Track):
-            if _d := value._provided_value:
-                self._get_provided_value(True).update(_d)
+            if _d := value.__get_value__():
+                self.__get_value__(True).update(_d)
             return
         try:
             self.id = value.id
