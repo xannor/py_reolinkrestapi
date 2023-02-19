@@ -3,11 +3,13 @@
 import json
 from typing import Final, Protocol, TypeGuard
 
+_JSONEncoder = json.JSONEncoder
+
 
 class SupportsJSON(Protocol):
     """Supports JSON method"""
 
-    def __json__(self, encoder: json.JSONEncoder) -> any:
+    def __json__(self, encoder: _JSONEncoder) -> any:
         ...
 
 
@@ -17,9 +19,6 @@ __JSON__: Final = "__json__"
 def supports_json(value: any) -> TypeGuard[SupportsJSON]:
     """Test is object supports __json__"""
     return value is not None and callable(getattr(value, __JSON__, None))
-
-
-_JSONEncoder = json.JSONEncoder
 
 
 class SmarterJSONEncoder(_JSONEncoder):

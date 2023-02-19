@@ -177,11 +177,6 @@ class LogoutRequest(Request, security.LogoutRequest):
     def __init__(self, /, response_type: ResponseTypes = ...):
         super().__init__(command=type(self).COMMAND, response_type=response_type)
 
-    def __init__(self, response_type: ResponseTypes = ResponseTypes.VALUE_ONLY) -> None:
-        super().__init__()
-        self.command = type(self).COMMAND
-        self.response_type = response_type
-
 
 class GetUserRequest(Request, security.GetUserRequest):
     """REST Get User(s) Request"""

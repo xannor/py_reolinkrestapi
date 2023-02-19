@@ -329,12 +329,12 @@ class _WhiteLedRange(providers.Value[dict[str, any]]):
 
     __slots__ = ()
 
-    _provided_value: JSON
+    __get_value__: providers.FactoryValue[JSON]
 
     @property
     def brightness(self):
         return model.MinMaxRange(
-            lambda _: value.get(self.Keys.brightness) if (value := self._provided_value) else None
+            self.lookup_factory(self.__get_value__, self.Keys.brightness, default=None)
         )
 
 
@@ -441,21 +441,11 @@ class SetWhiteLedRequest(Request, led.SetWhiteLedRequest):
         channel_id: int = ...,
         response_type: ResponseTypes = ...,
     ):
-        super().__init__(
-            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
-        )
+        super().__init__(command=type(self).COMMAND, response_type=response_type)
+        if channel_id is not ...:
+            self.channel_id = channel_id
         if info and info is not ...:
             self.info = info
-
-    def __init__(
-        self,
-        channel_id: int = 0,
-        response_type: ResponseTypes = ResponseTypes.VALUE_ONLY,
-    ):
-        super().__init__()
-        self.command = self.COMMAND
-        self.response_type = response_type
-        self.channel_id = channel_id
 
     @property
     def id(self):
@@ -476,8 +466,18 @@ class SetWhiteLedRequest(Request, led.SetWhiteLedRequest):
     def _lights(self):
         return self._get_lights()
 
-    @GetWhiteLedResponse.channel_id.setter
+    @property
+    def channel_id(self):
+        if value := self._lights:
+            return value.get(
+                self.Parameter.Lights.Keys.channel_id, RequestWithChannel.DEFAULT_CHANNEL
+            )
+        return RequestWithChannel.DEFAULT_CHANNEL
+
+    @channel_id.setter
     def channel_id(self, value):
+        if not value:
+            value = RequestWithChannel.DEFAULT_CHANNEL
         self._get_lights(True)[self.Parameter.Lights.Keys.channel_id] = int(value)
 
     @property

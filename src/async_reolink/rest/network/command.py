@@ -109,9 +109,8 @@ class GetChannelStatusResponse(RestCommandResponse, network.GetChannelStatusResp
 
     @property
     def channels(self):
-        return model.UpdatableChannelStatuses(
-            self.lookup_factory(self._get_value, self.Value.Keys.status, default=None)
-        )
+        # ChannelStatuses uses the whole value instead of just the key in it
+        return model.UpdatableChannelStatuses(self._get_value)
 
 
 class GetNetworkPortsRequest(Request, network.GetNetworkPortsRequest):
@@ -173,7 +172,9 @@ class GetRTSPUrlsRequest(Request, network.GetRTSPUrlsRequest):
 
     def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
         super().__init__(
-            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+            command=type(self).COMMAND,
+            channel_id=channel_id,
+            response_type=response_type,
         )
 
     @property
@@ -347,6 +348,7 @@ class GetWifiInfoResponse(RestCommandResponse, network.GetWifiInfoResponse):
 
     _value: Value.JSON
 
+    @property
     def info(self):
         # we are not passing the factory here since this object is meant to be detachable
         return model.WifiInfo(self._value.get(self.Value.Keys.info))
@@ -419,5 +421,5 @@ class GetWifiSignalResponse(RestCommandResponse, network.GetWifiSignalResponse):
     @property
     def signal_range(self):
         return MinMaxRange(
-            "", lambda _: value.get(self.Value.Keys.signal) if (value := self._range) else None
+            self.lookup_factory(self._get_range, self.Value.Keys.signal, default=None)
         )

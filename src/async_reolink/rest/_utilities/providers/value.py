@@ -11,7 +11,7 @@ from typing import (
     Sequence,
     overload,
 )
-from typing_extensions import TypeVar
+from typing_extensions import TypeVar, Self
 
 _T = TypeVar("_T", infer_variance=True)
 _K = TypeVar("_K", infer_variance=True)
@@ -25,6 +25,9 @@ class FactoryValue(Generic[_T], Protocol):
     """Factory Value"""
 
     def __call__(self, create=False) -> _T:
+        ...
+
+    def __get__(self, obj: any, type: type = None) -> Self:
         ...
 
 

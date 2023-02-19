@@ -24,7 +24,7 @@ class Record(BaseRecord, WithConnection):
         _command = commands[0]
         if len(commands) > 1 or not isinstance(_command, command.GetSnapshotRequest):
             return
-        query[RequestWithChannel.command.key] = _command.command
+        query[RequestWithChannel.Keys.command] = _command.command
         query.update(_command.raw_parameter)
         query["rs"] = str(Seed())
         return True

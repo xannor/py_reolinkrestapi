@@ -2538,7 +2538,7 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
     @property
     def wifi(self):
-        return self.Wifi(self._get_key_value)
+        return self.Wifi(self.__get_value__)
 
 
 class UpdatableCapabilities(Capabilities):

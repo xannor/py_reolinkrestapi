@@ -22,7 +22,9 @@ class GetMotionStateRequest(RequestWithChannel, alarm.GetMotionStateRequest):
 
     def __init__(self, /, channel_id: int = ..., response_type: ResponseTypes = ...):
         super().__init__(
-            command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
+            command=type(self).COMMAND,
+            channel_id=channel_id,
+            response_type=response_type,
         )
 
     @property
@@ -54,7 +56,7 @@ class GetMotionStateResponse(ResponseWithChannel, alarm.GetMotionStateResponse):
 
             state: int
 
-        class Keys(ResponseWithChannel.Value, Protocol):
+        class Keys(ResponseWithChannel.Value.Keys, Protocol):
             """Keys"""
 
             state: Final = "state"
@@ -65,4 +67,8 @@ class GetMotionStateResponse(ResponseWithChannel, alarm.GetMotionStateResponse):
 
     @property
     def state(self):
-        return True if (value := self._value) and value.get(self.Value.Keys.state, 0) else False
+        return (
+            True
+            if (value := self._value) and value.get(self.Value.Keys.state, 0)
+            else False
+        )

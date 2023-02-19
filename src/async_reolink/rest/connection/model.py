@@ -144,24 +144,29 @@ class RequestWithChannel(Request, connection_typing.ChannelValue):
         class Keys(ChannelKeys, Protocol):
             """Keys"""
 
+    DEFAULT_CHANNEL: Final = 0
+
     _get_parameter: providers.FactoryValue[Parameter.JSON]
     _parameter: Parameter.JSON
 
     __slots__ = ()
 
-    def __init__(self, /, channel_id: int = 0, **kwargs: Unpack[Request.KwArgs]):
+    def __init__(self, /, channel_id: int = ..., **kwargs: Unpack[Request.KwArgs]):
         super().__init__(**kwargs)
-        self.channel_id = channel_id
+        if channel_id is not ...:
+            self.channel_id = channel_id
 
     @property
     def channel_id(self):
         if value := self._parameter:
-            return value.get(self.Parameter.Keys.channel_id, 0)
-        return 0
+            return value.get(self.Parameter.Keys.channel_id, self.DEFAULT_CHANNEL)
+        return self.DEFAULT_CHANNEL
 
     @channel_id.setter
     def channel_id(self, value):
-        self._get_parameter(True)[self.Parameter.Keys.channel_id] = value
+        if not value:
+            value = self.DEFAULT_CHANNEL
+        self._get_parameter(True)[self.Parameter.Keys.channel_id] = int(value)
 
 
 T = TypeVar("T")
@@ -335,7 +340,9 @@ class ResponseWithChannel(Response, connection_typing.ChannelValue, ABC):
         self, response: dict, /, fallback_channel_id: int | None = None, **kwargs: any
     ) -> None:
         super().__init__(response, **kwargs)
-        self._fallback_channel_id = fallback_channel_id or 0
+        if fallback_channel_id is None or fallback_channel_id is ...:
+            fallback_channel_id = RequestWithChannel.DEFAULT_CHANNEL
+        self._fallback_channel_id = int(fallback_channel_id)
 
     _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON

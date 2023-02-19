@@ -169,7 +169,7 @@ class Connection(BaseConnection, WithConnection):
         self.__hostname = ""
         self.__session = None
 
-    def __process_response(self, value: any, request: Request = None) -> Response | None:
+    def __process_response(self, value: any, request: Request = None):
         if not RestResponse.is_response(value):
             raise errors.ReolinkResponseError("Invalid response from device")
         response = Response.from_response(value, request)
