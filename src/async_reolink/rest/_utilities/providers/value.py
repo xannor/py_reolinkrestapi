@@ -60,7 +60,7 @@ class Value(Generic[_T]):
             self.__factory = None
             self.__value = value
 
-    def __get_value__(self, create=False):
+    def __get_value__(self, create=False) -> _T:
         if self.__value is not ...:
             return self.__value
         return self.__factory(create)

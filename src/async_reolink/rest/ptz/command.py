@@ -778,12 +778,12 @@ class GetAutoFocusResponse(RestCommandResponse, ptz.GetAutoFocusResponse):
         class AutoFocus(Protocol):
             """Auto Focus"""
 
-            class JSON(TypedDict):
+            class JSON(ChannelJSON):
                 """JSON"""
 
                 disable: int
 
-            class Keys(Protocol):
+            class Keys(ChannelKeys, Protocol):
                 """Keys"""
 
                 disabled: Final = "disable"
@@ -815,6 +815,12 @@ class GetAutoFocusResponse(RestCommandResponse, ptz.GetAutoFocusResponse):
     @property
     def _info(self):
         return self._get_info()
+
+    @property
+    def channel_id(self):
+        if value := self._info:
+            return value.get(self.Value.AutoFocus.Keys.channel_id, 0)
+        return 0
 
     channel_id = GetTatternResponse.channel_id.setter(None)
 
@@ -863,11 +869,13 @@ class SetAutoFocusRequest(RequestWithChannel, ptz.SetAutoFocusRequest):
     def _info(self):
         return self._get_info()
 
-    channel_id = SetTatternRequest.channel_id.setter(None)
-
     @GetAutoFocusResponse.disabled.setter
     def disabled(self, value):
         self._get_info(True)[self.Parameter.AutoFocus.Keys.disabled] = int(bool(value))
+
+    @GetAutoFocusResponse.channel_id.setter
+    def channel_id(self, value):
+        self._get_info(True)[self.Parameter.AutoFocus.Keys.channel_id] = int(value or 0)
 
 
 class GetZoomFocusRequest(RequestWithChannel, ptz.GetZoomFocusRequest):
@@ -951,10 +959,19 @@ class GetZoomFocusResponse(RestCommandResponse, ptz.GetZoomFocusResponse):
     class Value(Protocol):
         """Value"""
 
+        class ZoomFocus(Protocol):
+            """Zoom/Focus"""
+
+            class JSON(local_model.ZoomFocus.JSON, ChannelJSON):
+                """JSON"""
+
+            class Keys(local_model.ZoomFocus.Keys, ChannelKeys, Protocol):
+                """Keys"""
+
         class JSON(TypedDict):
             """JSON"""
 
-            ZoomFocus: local_model.ZoomFocus.JSON
+            ZoomFocus: "GetZoomFocusResponse.Value.ZoomFocus.JSON"
 
         class Keys(Protocol):
             """Keys"""
@@ -974,13 +991,20 @@ class GetZoomFocusResponse(RestCommandResponse, ptz.GetZoomFocusResponse):
     _get_value: providers.FactoryValue[Value.JSON]
     _value: Value.JSON
 
-    channel_id = GetTatternResponse.channel_id
+    def _get_state(self, create=False) -> Value.ZoomFocus.JSON:
+        return self.lookup_value(
+            self._get_value, self.Value.Keys.state, create=create, default=None
+        )
 
     @property
     def state(self):
-        return local_model.ZoomFocus(
-            self.lookup_factory(self._get_value, self.Value.Keys.state, default=None)
-        )
+        return local_model.ZoomFocus(self._get_state)
+
+    @property
+    def channel_id(self):
+        if value := self._get_state():
+            return value.get(self.Value.ZoomFocus.Keys.channel_id, 0)
+        return 0
 
     _get_initial: providers.FactoryValue[Value.JSON]
     _initial: Value.JSON
@@ -1005,7 +1029,7 @@ _DefaultZoomOperation: Final = ptz_typing.ZoomOperation.ZOOM
 _DefaultZoomOperationStr: Final = zoom_operation_str(_DefaultZoomOperation)
 
 
-class SetZoomFocusRequest(Request, ptz.SetZoomFocusRequest):
+class SetZoomFocusRequest(RequestWithChannel, ptz.SetZoomFocusRequest):
     """Set Zoom or Focus"""
 
     class Parameter(Protocol):
@@ -1014,13 +1038,13 @@ class SetZoomFocusRequest(Request, ptz.SetZoomFocusRequest):
         class Operation(Protocol):
             """Operation"""
 
-            class JSON(TypedDict):
+            class JSON(ChannelJSON):
                 """JSON"""
 
                 op: str
                 pos: int
 
-            class Keys(Protocol):
+            class Keys(ChannelKeys, Protocol):
                 """Keys"""
 
                 operation: Final = "op"
@@ -1056,9 +1080,9 @@ class SetZoomFocusRequest(Request, ptz.SetZoomFocusRequest):
         super().__init__(
             command=type(self).COMMAND, channel_id=channel_id, response_type=response_type
         )
-        if operation and operation is not ...:
+        if operation is not None and operation is not ...:
             self.operation = operation
-        if position and position is not ...:
+        if position is not None and position is not ...:
             self.position = position
 
     _get_parameter: providers.FactoryValue[Parameter.JSON]
@@ -1076,7 +1100,15 @@ class SetZoomFocusRequest(Request, ptz.SetZoomFocusRequest):
     def _state(self):
         return self._get_state()
 
-    channel_id = SetTatternRequest.channel_id.setter(None)
+    @property
+    def channel_id(self):
+        if value := self._state:
+            return value.get(self.Parameter.Operation.Keys.channel_id, 0)
+        return 0
+
+    @channel_id.setter
+    def channel_id(self, value):
+        self._get_state(True)[self.Parameter.Operation.Keys.channel_id] = int(value)
 
     @property
     def operation(self):
@@ -1111,32 +1143,19 @@ class SetControlRequest(RequestWithChannel, ptz.SetControlRequest):
     class Parameter(Protocol):
         """Parameter"""
 
-        class Operation(Protocol):
-            """Operation"""
-
-            class JSON(TypedDict):
-                """JSON"""
-
-                op: str
-                id: int
-                speed: int
-
-            class Keys(Protocol):
-                """Keys"""
-
-                operation: Final = "op"
-                preset_id: Final = "id"
-                speed: Final = "speed"
-
-        class JSON(TypedDict):
+        class JSON(RequestWithChannel.Parameter.JSON):
             """JSON"""
 
-            Control: "SetControlRequest.Parameter.Operation.JSON"
+            op: str
+            id: int
+            speed: int
 
-        class Keys(Protocol):
+        class Keys(RequestWithChannel.Parameter.Keys, Protocol):
             """Keys"""
 
-            state: Final = "Control"
+            operation: Final = "op"
+            preset_id: Final = "id"
+            speed: Final = "speed"
 
     __slots__ = ()
 
@@ -1169,48 +1188,34 @@ class SetControlRequest(RequestWithChannel, ptz.SetControlRequest):
     _get_parameter: providers.FactoryValue[Parameter.JSON]
     _parameter: Parameter.JSON
 
-    def _get_state(self, create=False) -> Parameter.Operation.JSON:
-        return self.lookup_value(
-            self._get_parameter,
-            self.Parameter.Keys.state,
-            create=create,
-            default_factory=lambda: dict() if create else None,
-        )
-
-    @property
-    def _state(self):
-        return self._get_state()
-
-    channel_id = SetTatternRequest.channel_id.setter(None)
-
     @property
     def operation(self):
-        if value := self._state:
+        if value := self._parameter:
             return ptz_typing.Operation(
-                value.get(self.Parameter.Operation.Keys.operation, _DefaultOperationStr)
+                value.get(self.Parameter.Keys.operation, _DefaultOperationStr)
             )
         return _DefaultOperation
 
     @operation.setter
     def operation(self, value):
-        self._get_state(True)[self.Parameter.Operation.Keys.operation] = operation_str(value)
+        self._get_parameter(True)[self.Parameter.Keys.operation] = operation_str(value)
 
     @property
     def speed(self):
-        if value := self._state:
-            return value.get(self.Parameter.Operation.Keys.speed, 0)
+        if value := self._parameter:
+            return value.get(self.Parameter.Keys.speed, 0)
         return 0
 
     @speed.setter
     def speed(self, value):
-        self._get_state(True)[self.Parameter.Operation.Keys.speed] = int(value)
+        self._get_parameter(True)[self.Parameter.Keys.speed] = int(value)
 
     @property
     def preset_id(self):
-        if value := self._state:
-            return value.get(self.Parameter.Operation.Keys.preset_id, 0)
+        if value := self._parameter:
+            return value.get(self.Parameter.Keys.preset_id, 0)
         return 0
 
     @preset_id.setter
     def preset_id(self, value):
-        self._get_state(True)[self.Parameter.Operation.Keys.preset_id] = int(value)
+        self._get_parameter(True)[self.Parameter.Keys.preset_id] = int(value)

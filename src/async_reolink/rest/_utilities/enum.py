@@ -7,17 +7,18 @@ from typing import (
     Generic,
     Iterator,
     Mapping,
-    TypeVar,
     cast,
     get_args,
     overload,
 )
 
+from typing_extensions import TypeVar
+
 from .._utilities.descriptors import instance_or_classproperty
 
-E = TypeVar("E", bound=Enum)
-V = TypeVar("V")
-T = TypeVar("T")
+E = TypeVar("E", bound=Enum, default=Enum, infer_variance=True)
+V = TypeVar("V", default=int, infer_variance=True)
+T = TypeVar("T", default=int, infer_variance=True)
 
 
 class EnumMap(Generic[E, V]):

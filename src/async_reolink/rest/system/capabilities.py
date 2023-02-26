@@ -1,57 +1,35 @@
 """System capabilities"""
 
-from enum import Flag
+from enum import Enum, Flag
 from typing import (
+    Callable,
     ClassVar,
     Final,
     Mapping,
     Protocol,
     TypeAlias,
     TypedDict,
-    get_args,
-    overload,
 )
-from typing_extensions import TypeVar
+from typing_extensions import TypeVar, Self
 
 from async_reolink.api.system import capabilities
 
 from .._utilities.providers import value as providers
-from .._utilities.descriptors import instance_or_classproperty
-from .._utilities.enum import FlagMap, EnumMap
 
 _JSONDict: TypeAlias = dict[str, any]
+
+_NO_JSON: Final[_JSONDict] = None
 
 # pylint: disable=too-few-public-methods
 # pylint: disable=missing-function-docstring
 
-_defaults: dict[type, any] = {None: 0, int: 0, bool: False, str: ""}
-
-_T = TypeVar("_T", infer_variance=True)
-
-_F = TypeVar("_F", bound=Flag)
-
-_Permissions = FlagMap(
-    {
-        capabilities.Permissions.OPTION: 1,
-        capabilities.Permissions.WRITE: 2,
-        capabilities.Permissions.READ: 4,
-    }
-)
-
-_MISSING_VALUE: Final = ...
-
-
-class _NoKey:
-    ...
-
-
-_MISSING_KEY: Final = _NoKey()
-
 _CT = TypeVar("_CT", infer_variance=True, default=int)
 
 
-class Capability(providers.Value[_JSONDict], capabilities.Capability[_CT]):
+class Capability(capabilities.Capability[_CT], Protocol):
     """Capability"""
+
+    Type: ClassVar[type[_CT]] = int
 
     class JSON(TypedDict):
         """JSON"""
@@ -65,113 +43,234 @@ class Capability(providers.Value[_JSONDict], capabilities.Capability[_CT]):
         value: Final = "ver"
         permission: Final = "permit"
 
-    @instance_or_classproperty
-    def Type(self):
-        return self.__type
 
-    @Type.class_getter
-    def Type(cls):
-        args = get_args(cls)
-        if len(args) > 0:
-            return args[0]
-        return int
+_defaults: dict[type, any] = {
+    bool: False,
+    int: 0,
+    str: "",
+}
 
-    Permissions: ClassVar[type[capabilities.Permissions]] = capabilities.Permissions
+_attempts: dict[any, bool] = {}
 
-    __slots__ = ("__type", "__map")
+
+class SimpleCapability(providers.Value[_JSONDict], Capability[_CT]):
+    """Capability"""
+
+    __slots__ = ("__factory", "__default", "__type")
 
     def __init__(
         self,
         value: providers.FactoryValue[_JSONDict] | _JSONDict | None,
-        __type: type[_CT] | EnumMap[_CT, int] | FlagMap[_CT, int] = _MISSING_VALUE,
+        value_factory: Callable[[int], _CT],
         /,
-        **kwargs: any,
+        default: _CT = ...,
+        _type: type[_CT] | None = None,
     ) -> None:
-        super().__init__(value, **kwargs)
-        # self._get_value: providers.FactoryValue[int] = self.lookup_factory(
-        #     self.__get_value__, self.Keys.value, default=_MISSING_KEY
-        # )
-        # self._get_permissions: providers.FactoryValue[int] = self.lookup_factory(
-        #     self.__get_value__, self.Keys.permission, default=_MISSING_KEY
-        # )
-        if __type in {_MISSING_VALUE, None}:
-            __type = type(self).Type
-        if isinstance(__type, EnumMap):
-            self.__map = __type
-            __type = self.__map.Enum
-        elif isinstance(__type, FlagMap):
-            self.__map = __type
-            __type = self.__map.Flag
-        else:
-            self.__map = None
-
-        self.__type: type[_T] = __type
-
-    __get_value__: providers.FactoryValue[JSON]
+        super().__init__(value)
+        if value_factory is None:
+            value_factory = _type
+        self.__factory = value_factory
+        if _type is None and isinstance(value_factory, type):
+            _type = value_factory
+        self.__default = None
+        if default is ...:
+            if (default := _defaults.get(_type)) is None and (
+                _type or self.__factory
+            ) not in _attempts:
+                _attempts[_type or self.__factory] = True
+                try:
+                    if _type is None:
+                        default = self.__factory(0)
+                    else:
+                        default = _type(0)
+                except Exception:
+                    default = None
+                if default is not None:
+                    if _type is None:
+                        _type = type(default)
+                    _defaults[_type] = default
+        self.__default = default
+        if _type is not None:
+            self.__type = _type
+        elif default is not None:
+            self.__type = type(default)
 
     def _get_value(self, create=False) -> int:
-        return self.lookup_value(
-            self.__get_value__, self.Keys.value, create=create, default=_MISSING_KEY
-        )
-
-    @property
-    def _raw_value(self):
-        if (value := self._get_value()) is None or value is _MISSING_KEY or value is _MISSING_VALUE:
-            return None
-        return value
-
-    @property
-    def value(self) -> _T:
-        __type = self.Type
-        if (value := self._get_value()) is _MISSING_KEY:
-            if (value := _defaults.get(self.Type, _MISSING_VALUE)) is _MISSING_VALUE:
-                if isinstance(self.__map, EnumMap):
-                    value = self.__map.DEFAULT
-                elif isinstance(self.__map, FlagMap):
-                    value = self.__map.NONE
-                else:
-                    value = __type(0)
-                _defaults[__type] = value
-        return self.__type(value)
+        return self.lookup_value(self.__get_value__, self.Keys.value, create, default=None)
 
     def _get_permissions(self, create=False) -> int:
-        return self.lookup_value(
-            self.__get_value__, self.Keys.permission, create=create, default=_MISSING_KEY
-        )
+        return self.lookup_value(self.__get_value__, self.Keys.permission, create, default=None)
+
+    def __getattribute__(self, __name: str):
+        if __name == "Type" and self.__type is not None:
+            return self.__type
+        return super().__getattribute__(__name)
+
+    @property
+    def _default(self) -> _CT:
+        return self.__default
+
+    @property
+    def _factory(self):
+        return self.__factory
 
     @property
     def permissions(self):
-        if (value := self._get_permissions()) is _MISSING_KEY:
-            return _Permissions.NONE
-        return _Permissions(value)
+        if (value := self._get_permissions()) is ... or value == 0:
+            return None
+        return capabilities.Permissions(value)
+
+    @property
+    def _raw_value(self):
+        if (value := self._get_value()) is ...:
+            return None
+        return value
 
     def __bool__(self):
-        if (perms := self.permissions) is None or capabilities.Permissions.READ not in perms:
-            return False
         return bool(self._raw_value)
 
     def __index__(self):
-        if (perms := self.permissions) is None or capabilities.Permissions.READ not in perms:
-            return 0
         return self._raw_value or 0
 
     def __int__(self):
-        if (perms := self.permissions) is None or capabilities.Permissions.READ not in perms:
-            return 0
         return self._raw_value or 0
-
-    def __str__(self):
-        if (perms := self.permissions) is None or capabilities.Permissions.READ not in perms:
-            return ""
-        return str(self.value)
 
     def __eq__(self, __o: object) -> bool:
         if hasattr(__o, "__index__"):
             return self._raw_value == __o.__index__()
         return self.value == __o
 
+    @property
+    def value(self):
+        if (value := self._get_value()) is ...:
+            return self._default
+        return self._factory(value)
 
-_CloudStorage: Final = FlagMap(
+    def __str__(self):
+        return str(self.value)
+
+    def __hash__(self) -> int:
+        return self.value.__hash__()
+
+
+_CE = TypeVar("_CE", bound=Enum, default=Enum, infer_variance=True)
+
+
+class EnumCapability(SimpleCapability[_CE]):
+    """Capability"""
+
+    __slots__ = ()
+
+    def __init__(
+        self,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None,
+        _map: Mapping[int, _CE],
+        /,
+        _zero: _CE = ...,
+        _type: type[_CE] | None = None,
+    ) -> None:
+        if _zero is ... and 0 in _map:
+            _zero = _map[0]
+        if _type is None:
+            _type = next(map(type, iter(_map.values())), None)
+
+        def value_factory(value: int) -> _CE:
+            return self._value_factory(self, _map, value)
+
+        super().__init__(value, value_factory, default=_zero, _type=_type)
+
+    @classmethod
+    def _value_factory(cls, self: Self, __map: Mapping[int, Enum], value: int):
+        if (enum := __map.get(value)) is None:
+            return self._default
+        return enum
+
+
+_CF = TypeVar("_CF", bound=Flag, default=Flag, infer_variance=True)
+
+
+class FlagCapability(EnumCapability[_CF]):
+    """Capability"""
+
+    __slots__ = ("__cache",)
+
+    def __init__(
+        self,
+        value: providers.FactoryValue[_JSONDict] | _JSONDict | None,
+        _map: Mapping[int, _CF],
+    ) -> None:
+        super().__init__(value, _map, _zero=None)
+        self.__cache: dict[int, _CF] = {}
+
+    def __contains__(self, value: _CF):
+        if (flag := self.value) is None:
+            return False
+        return flag.__contains__(value)
+
+    def __iter__(self):
+        if (flag := self.value) is None:
+            return
+        for f in flag:
+            yield f
+
+    def __len__(self):
+        if (flag := self.value) is None:
+            return 0
+        return flag.__len__()
+
+    def __or__(self, other: _CF):
+        if (flag := self.value) is None:
+            return other
+        return flag | other
+
+    def __and__(self, other: _CF):
+        if (flag := self.value) is None:
+            return self._default
+        return flag & other
+
+    def __xor__(self, other: _CF):
+        if (flag := self.value) is None:
+            return other
+        return flag ^ other
+
+    def __invert__(self):
+        if (flag := self.value) is None:
+            __type = self.Type
+            if not issubclass(__type, Flag):
+                return self._default
+            return __type(0).__invert()
+        return flag.__invert__()
+
+    @classmethod
+    def _value_factory(cls, self: Self, __map: Mapping[int, Flag], value: int):
+        if (flag := __map.get(value)) is None and (flag := self.__cache.get(value)) is None:
+            if not value:
+                return self._default
+            flag_value: int = 0
+            for v, f in __map.items():
+                if value & v == v:
+                    if flag_value == 0:
+                        flag = f
+                        flag_value = v
+                    else:
+                        flag = flag | f
+                        flag_value = flag_value | v
+            if not flag_value:
+                flag = self._default
+            self.__cache[value] = flag
+
+        return flag
+
+
+_K = TypeVar("_K", infer_variance=True)
+_V = TypeVar("_V", infer_variance=True)
+
+
+def _inverse_map(map: Mapping[_K, _V]) -> Mapping[_V, _K]:
+    return {v: k for k, v in map.items()}
+
+
+_CLOUDSTORAGE: Final = _inverse_map(
     {
         capabilities.CloudStorage.UPLOAD: 1 << 0,
         capabilities.CloudStorage.CONFIG: 1 << 1,
@@ -179,14 +278,14 @@ _CloudStorage: Final = FlagMap(
     }
 )
 
-_DayNight: Final = EnumMap(
+_DAYNIGHT: Final = _inverse_map(
     {
         capabilities.DayNight.DAY_NIGHT: 1,
         capabilities.DayNight.THRESHOLD: 2,
     }
 )
 
-_DDns: Final = EnumMap(
+_DDNS: Final = _inverse_map(
     {
         capabilities.DDns.SWAN: 1,
         capabilities.DDns.THREE322: 2,
@@ -200,7 +299,7 @@ _DDns: Final = EnumMap(
     }
 )
 
-_Email: Final = EnumMap(
+_EMAIL: Final = _inverse_map(
     {
         capabilities.Email.JPEG: 1,
         capabilities.Email.VIDEO_JPEG: 2,
@@ -208,21 +307,21 @@ _Email: Final = EnumMap(
     }
 )
 
-_EncodingType: Final = EnumMap(
+_ENCODING_TYPE: Final = _inverse_map(
     {
         capabilities.EncodingType.H264: 0,
         capabilities.EncodingType.H265: 1,
     }
 )
 
-_Floodlight: Final = EnumMap(
+_FLOODLIGHT: Final = _inverse_map(
     {
         capabilities.FloodLight.WHITE: 1,
         capabilities.FloodLight.AUTO: 2,
     }
 )
 
-_FTP: Final = EnumMap(
+_FTP: Final = _inverse_map(
     {
         capabilities.Ftp.STREAM: 1,
         capabilities.Ftp.JPEG_STREAM: 2,
@@ -233,35 +332,35 @@ _FTP: Final = EnumMap(
     }
 )
 
-_Live: Final = EnumMap(
+_LIVE: Final = _inverse_map(
     {
         capabilities.Live.MAIN_EXTERN_SUB: 1,
         capabilities.Live.MAIN_SUB: 2,
     }
 )
 
-_OSD: Final = EnumMap(
+_OSD: Final = _inverse_map(
     {
         capabilities.Osd.SUPPORTED: 1,
         capabilities.Osd.DISTINCT: 2,
     }
 )
 
-_PtzControl: Final = EnumMap(
+_PTZ_CONTROL: Final = _inverse_map(
     {
         capabilities.PTZControl.ZOOM: 1,
         capabilities.PTZControl.ZOOM_FOCUS: 2,
     }
 )
 
-_PtzDirection: Final = EnumMap(
+_PTZ_DIRECTION: Final = _inverse_map(
     {
         capabilities.PTZDirection.EIGHT_AUTO: 0,
         capabilities.PTZDirection.FOUR_NO_AUTO: 1,
     }
 )
 
-_PtzType: Final = EnumMap(
+_PTZ_TYPE: Final = _inverse_map(
     {
         capabilities.PTZType.AF: 1,
         capabilities.PTZType.PTZ: 2,
@@ -271,14 +370,14 @@ _PtzType: Final = EnumMap(
     }
 )
 
-_RecordSchedule: Final = EnumMap(
+_RECORD_SCHEDULE: Final = _inverse_map(
     {
         capabilities.RecordSchedule.MOTION: 1,
         capabilities.RecordSchedule.MOTION_LIVE: 2,
     }
 )
 
-_ScheduleVersion: Final = EnumMap(
+_SCHEDULE_VERSION: Final = _inverse_map(
     {
         capabilities.ScheduleVersion.BASIC: 0,
         capabilities.ScheduleVersion.V20: 1,
@@ -286,7 +385,7 @@ _ScheduleVersion: Final = EnumMap(
 )
 
 
-_Time: Final = EnumMap(
+_TIME: Final = _inverse_map(
     {
         capabilities.Time.SUNDAY: 1,
         capabilities.Time.ANYDAY: 2,
@@ -294,7 +393,7 @@ _Time: Final = EnumMap(
 )
 
 
-_Upgrade: Final = EnumMap(
+_UPGRADE: Final = _inverse_map(
     {
         capabilities.Upgrade.MANUAL: 1,
         capabilities.Upgrade.ONLINE: 2,
@@ -302,7 +401,7 @@ _Upgrade: Final = EnumMap(
 )
 
 
-_VideoClip: Final = EnumMap(
+_VIDEO_CLIP: Final = _inverse_map(
     {
         capabilities.VideoClip.FIXED: 1,
         capabilities.VideoClip.MOD: 2,
@@ -316,7 +415,7 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
     class AI(providers.Value[_JSONDict], capabilities.ChannelCapabilities.AI):
         """AI"""
 
-        class Track(providers.Value[_JSONDict], capabilities.ChannelCapabilities.AI.Track):
+        class Track(SimpleCapability[bool], capabilities.ChannelCapabilities.AI.Track):
             """Track"""
 
             class JSON(TypedDict):
@@ -333,39 +432,28 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
             __slots__ = ()
 
-            @property
-            def _value(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.value, default=None), bool
+            def _get_capability(self, create=False) -> Capability.JSON:
+                return self.lookup_value(
+                    self.__get_value__, self.Keys.value, create, default=_NO_JSON
                 )
 
-            def __bool__(self):
-                return self._value.__bool__()
+            def _get_permissions(self, create=False) -> int:
+                return self.lookup_value(
+                    self._get_capability, Capability.Keys.permission, create, default=None
+                )
 
-            def __index__(self):
-                return self._value.__index__()
+            def _get_value(self, create=False) -> int:
+                return self.lookup_value(
+                    self._get_capability, Capability.Keys.value, create, default=None
+                )
 
-            def __int__(self):
-                return self._value.__int__()
-
-            def __str__(self):
-                return self._value.__str__()
-
-            def __eq__(self, __o: object):
-                return self._value.__eq__(__o)
-
-            @property
-            def value(self):
-                return self._value.value
-
-            @property
-            def permissions(self):
-                return self._value.permissions
+            def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+                super().__init__(value, bool)
 
             @property
             def pet(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.pet, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.pet, default=_NO_JSON),
                     bool,
                 )
 
@@ -408,37 +496,40 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
         @property
         def audio(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.audio, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.audio, default=_NO_JSON),
+                bool,
             )
 
         @property
         def io_in(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.io_in, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.io_in, default=_NO_JSON),
+                bool,
             )
 
         @property
         def io_out(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.io_out, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.io_out, default=_NO_JSON),
                 bool,
             )
 
         @property
         def motion(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.motion, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.motion, default=_NO_JSON),
                 bool,
             )
 
         @property
         def rf(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.rf, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.rf, default=_NO_JSON),
+                bool,
             )
 
-    class ISP(providers.Value[_JSONDict], capabilities.ChannelCapabilities.ISP):
+    class ISP(SimpleCapability[bool], capabilities.ChannelCapabilities.ISP):
         """ISP"""
 
         class JSON(TypedDict):
@@ -479,121 +570,110 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
         __slots__ = ()
 
-        @property
-        def _value(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.value, default=None), bool
+        def _get_capability(self, create=False) -> Capability.JSON:
+            return self.lookup_value(self.__get_value__, self.Keys.value, create, default=_NO_JSON)
+
+        def _get_permissions(self, create=False) -> int:
+            return self.lookup_value(
+                self._get_capability, Capability.Keys.permission, create, default=None
             )
 
-        def __bool__(self):
-            return self._value.__bool__()
+        def _get_value(self, create=False) -> int:
+            return self.lookup_value(
+                self._get_capability, Capability.Keys.value, create, default=None
+            )
 
-        def __index__(self):
-            return self._value.__index__()
-
-        def __int__(self):
-            return self._value.__int__()
-
-        def __str__(self):
-            return self._value.__str__()
-
-        def __eq__(self, __o: object):
-            return self._value.__eq__(__o)
-
-        @property
-        def value(self):
-            return self._value.value
-
-        @property
-        def permissions(self):
-            return self._value.permissions
+        def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+            super().__init__(value, bool)
 
         @property
         def threeDnr(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.threeDnr, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.threeDnr, default=_NO_JSON),
                 bool,
             )
 
         @property
         def antiflicker(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.antiflicker, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.antiflicker, default=_NO_JSON),
                 bool,
             )
 
         @property
         def backlight(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.backlight, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.backlight, default=_NO_JSON),
                 bool,
             )
 
         @property
         def bright(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.bright, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.bright, default=_NO_JSON),
                 bool,
             )
 
         @property
         def contrast(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.contrast, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.contrast, default=_NO_JSON),
                 bool,
             )
 
         @property
         def day_night(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.day_night, default=None),
-                _DayNight,
+            return EnumCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.day_night, default=_NO_JSON),
+                _DAYNIGHT,
             )
 
         @property
         def exposure_mode(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.exposure_mode, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.exposure_mode, default=_NO_JSON),
                 bool,
             )
 
         @property
         def flip(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.flip, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.flip, default=_NO_JSON),
+                bool,
             )
 
         @property
         def hue(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.hue, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.hue, default=_NO_JSON),
+                bool,
             )
 
         @property
         def mirror(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.mirror, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.mirror, default=_NO_JSON),
                 bool,
             )
 
         @property
         def satruation(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.satruation, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.satruation, default=_NO_JSON),
                 bool,
             )
 
         @property
         def sharpen(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.sharpen, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.sharpen, default=_NO_JSON),
                 bool,
             )
 
         @property
         def white_balance(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.white_balance, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.white_balance, default=_NO_JSON),
                 bool,
             )
 
@@ -622,15 +702,15 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
             @property
             def audio(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.audo, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.audo, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def record(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.record, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.record, default=_NO_JSON),
                     bool,
                 )
 
@@ -653,8 +733,8 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
         @property
         def with_pir(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.with_pir, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.with_pir, default=_NO_JSON),
                 bool,
             )
 
@@ -685,44 +765,44 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
         @property
         def control(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.control, default=None),
-                _PtzControl,
+            return EnumCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.control, default=_NO_JSON),
+                _PTZ_CONTROL,
             )
 
         @property
         def direction(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.direction, default=None),
-                _PtzDirection,
+            return EnumCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.direction, default=_NO_JSON),
+                _PTZ_DIRECTION,
             )
 
         @property
         def patrol(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.patrol, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.patrol, default=_NO_JSON),
                 bool,
             )
 
         @property
         def preset(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.preset, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.preset, default=_NO_JSON),
                 bool,
             )
 
         @property
         def tattern(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.tattern, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.tattern, default=_NO_JSON),
                 bool,
             )
 
         @property
         def type(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.type, default=None),
-                _PtzType,
+            return EnumCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.type, default=_NO_JSON),
+                _PTZ_TYPE,
             )
 
     class Record(providers.Value[_JSONDict], capabilities.ChannelCapabilities.Record):
@@ -748,37 +828,37 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
         @property
         def config(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.config, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.config, default=_NO_JSON),
                 bool,
             )
 
         @property
         def download(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.download, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.download, default=_NO_JSON),
                 bool,
             )
 
         @property
         def replay(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.replay, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.replay, default=_NO_JSON),
                 bool,
             )
 
         @property
         def schedule(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.schedule, default=None),
-                _RecordSchedule,
+            return EnumCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.schedule, default=_NO_JSON),
+                _RECORD_SCHEDULE,
             )
 
     class Supports(providers.Value[_JSONDict], capabilities.ChannelCapabilities.Supports):
         """Supports"""
 
         class AI(
-            providers.Value[_JSONDict],
+            SimpleCapability[bool],
             capabilities.ChannelCapabilities.Supports.AI,
         ):
             """AI"""
@@ -817,110 +897,106 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
             __slots__ = ()
 
-            @property
-            def _value(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.value, default=None),
-                    bool,
+            def _get_capability(self, create=False) -> Capability.JSON:
+                return self.lookup_value(
+                    self.__get_value__, self.Keys.value, create, default=_NO_JSON
                 )
 
-            def __bool__(self):
-                return self._value.__bool__()
+            def _get_permissions(self, create=False) -> int:
+                return self.lookup_value(
+                    self._get_capability, Capability.Keys.permission, create, default=None
+                )
 
-            def __index__(self):
-                return self._value.__index__()
+            def _get_value(self, create=False) -> int:
+                return self.lookup_value(
+                    self._get_capability, Capability.Keys.value, create, default=None
+                )
 
-            def __int__(self):
-                return self._value.__int__()
-
-            def __str__(self):
-                return self._value.__str__()
-
-            def __eq__(self, __o: object):
-                return self._value.__eq__(__o)
-
-            @property
-            def value(self):
-                return self._value.value
-
-            @property
-            def permissions(self):
-                return self._value.permissions
+            def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+                super().__init__(value, bool)
 
             @property
             def animal(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.animal, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.animal, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def detect_config(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.detect_config, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(
+                        self.__get_value__, self.Keys.detect_config, default=_NO_JSON
+                    ),
                     bool,
                 )
 
             @property
             def pet(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.pet, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.pet, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def face(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.face, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.face, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def people(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.people, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.people, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def sensitivity(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.sensitivity, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(
+                        self.__get_value__, self.Keys.sensitivity, default=_NO_JSON
+                    ),
                     bool,
                 )
 
             @property
             def stay_time(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.stay_time, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.stay_time, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def target_size(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.target_size, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(
+                        self.__get_value__, self.Keys.target_size, default=_NO_JSON
+                    ),
                     bool,
                 )
 
             @property
             def track_classify(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.track_classify, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(
+                        self.__get_value__, self.Keys.track_classify, default=_NO_JSON
+                    ),
                     bool,
                 )
 
             @property
             def vehicle(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.vehicle, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.vehicle, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def adjust(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.adjust, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.adjust, default=_NO_JSON),
                     bool,
                 )
 
@@ -952,36 +1028,38 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
             @property
             def brightness(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.brightness, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.brightness, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def intelligent(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.intelligent, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(
+                        self.__get_value__, self.Keys.intelligent, default=_NO_JSON
+                    ),
                     bool,
                 )
 
             @property
             def keep_on(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.keep_on, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.keep_on, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def schedule(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.schedule, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.schedule, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def switch(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.switch, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.switch, default=_NO_JSON),
                     bool,
                 )
 
@@ -1017,35 +1095,40 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
         @property
         def gop(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.gop, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.gop, default=_NO_JSON),
+                bool,
             )
 
         @property
         def motion_detection(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.motion_detection, default=None),
+            return SimpleCapability(
+                self.lookup_factory(
+                    self.__get_value__, self.Keys.motion_detection, default=_NO_JSON
+                ),
                 bool,
             )
 
         @property
         def ptz_check(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.ptz_check, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.ptz_check, default=_NO_JSON),
                 bool,
             )
 
         @property
         def threshold_adjust(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.threshold_adjust, default=None),
+            return SimpleCapability(
+                self.lookup_factory(
+                    self.__get_value__, self.Keys.threshold_adjust, default=_NO_JSON
+                ),
                 bool,
             )
 
         @property
         def white_dark(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.white_dark, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.white_dark, default=_NO_JSON),
                 bool,
             )
 
@@ -1116,60 +1199,63 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
     @property
     def battery(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.battery, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.battery, default=_NO_JSON),
+            bool,
         )
 
     @property
     def battery_analysis(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.battery_analysis, default=None),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.battery_analysis, default=_NO_JSON),
             bool,
         )
 
     @property
     def camera_mode(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.camera_mode, default=None),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.camera_mode, default=_NO_JSON),
             bool,
         )
 
     @property
     def disable_autofocus(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.disable_autofocus, default=None),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.disable_autofocus, default=_NO_JSON),
             bool,
         )
 
     @property
     def enc(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.enc, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.enc, default=_NO_JSON),
+            bool,
         )
 
     @property
     def floodlight(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.floodlight, default=None),
-            _Floodlight,
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.floodlight, default=_NO_JSON),
+            _FLOODLIGHT,
         )
 
     @property
     def ftp(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.ftp, default=None), _FTP
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.ftp, default=_NO_JSON), _FTP
         )
 
     @property
     def image(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.image, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.image, default=_NO_JSON),
+            bool,
         )
 
     @property
     def indicator_light(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.indicator_light, default=None),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.indicator_light, default=_NO_JSON),
             bool,
         )
 
@@ -1179,26 +1265,29 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
     @property
     def led_control(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.led_control, default=None),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.led_control, default=_NO_JSON),
             bool,
         )
 
     @property
     def live(self):
-        return Capability(self.lookup_factory(self.__get_value__, self.Keys.live), _Live)
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.live, default=_NO_JSON), _LIVE
+        )
 
     @property
     def main_encoding(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.main_encoding, default=None),
-            _EncodingType,
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.main_encoding, default=_NO_JSON),
+            _ENCODING_TYPE,
         )
 
     @property
     def mask(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.mask, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.mask, default=_NO_JSON),
+            bool,
         )
 
     @property
@@ -1207,14 +1296,15 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
     @property
     def osd(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.osd, default=None), _OSD
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.osd, default=_NO_JSON), _OSD
         )
 
     @property
     def power_led(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.power_led, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.power_led, default=_NO_JSON),
+            bool,
         )
 
     @property
@@ -1227,15 +1317,16 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
     @property
     def shelter_config(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.shelter_config, default=None),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.shelter_config, default=_NO_JSON),
             bool,
         )
 
     @property
     def snap(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.snap, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.snap, default=_NO_JSON),
+            bool,
         )
 
     @property
@@ -1244,21 +1335,22 @@ class ChannelCapabilities(providers.Value[_JSONDict], capabilities.ChannelCapabi
 
     @property
     def video_clip(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.video_clip, default=None),
-            _VideoClip,
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.video_clip, default=_NO_JSON),
+            _VIDEO_CLIP,
         )
 
     @property
     def watermark(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.watermark, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.watermark, default=_NO_JSON),
+            bool,
         )
 
     @property
     def white_balance(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.white_balance, default=None),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.white_balance, default=_NO_JSON),
             bool,
         )
 
@@ -1269,7 +1361,7 @@ class _Channels(providers.Value[list[_JSONDict]], Mapping[int, ChannelCapabiliti
     __slots__ = ()
 
     def __getitem__(self, __k: int):
-        return ChannelCapabilities(self.lookup_factory(self.__get_value__, __k, default=None))
+        return ChannelCapabilities(self.lookup_factory(self.__get_value__, __k, default=_NO_JSON))
 
     def __iter__(self):
         if (_list := self.__get_value__()) is None:
@@ -1308,15 +1400,15 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
             @property
             def error(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.error, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.error, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def full(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.full, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.full, default=_NO_JSON),
                     bool,
                 )
 
@@ -1339,14 +1431,15 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         @property
         def audio(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.audio, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.audio, default=_NO_JSON),
+                bool,
             )
 
         @property
         def disconnect(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.disconnect, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.disconnect, default=_NO_JSON),
                 bool,
             )
 
@@ -1356,8 +1449,8 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         @property
         def ip_conflict(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.ip_conflict, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.ip_conflict, default=_NO_JSON),
                 bool,
             )
 
@@ -1380,17 +1473,19 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         @property
         def info(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.info, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.info, default=_NO_JSON),
+                bool,
             )
 
         @property
         def name(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.name, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.name, default=_NO_JSON),
+                bool,
             )
 
-    class Email(providers.Value[_JSONDict], capabilities.Capabilities.Email):
+    class Email(EnumCapability[capabilities.Email], capabilities.Capabilities.Email):
         """Email"""
 
         class JSON(TypedDict):
@@ -1409,35 +1504,33 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         __slots__ = ()
 
-        @property
-        def _value(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.value, default=None),
-                _Email,
+        def _get_capability(self, create=False) -> Capability.JSON:
+            return self.lookup_value(self.__get_value__, self.Keys.value, create, default=_NO_JSON)
+
+        def _get_permissions(self, create=False) -> int:
+            return self.lookup_value(
+                self._get_capability, Capability.Keys.permission, create, default=None
             )
 
-        @property
-        def value(self):
-            return self._value.value
+        def _get_value(self, create=False) -> int:
+            return self.lookup_value(
+                self._get_capability, Capability.Keys.value, create, default=None
+            )
 
-        @property
-        def permissions(self):
-            return self._value.permissions
-
-        def __bool__(self):
-            return bool(self.value)
+        def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+            super().__init__(value, _EMAIL)
 
         @property
         def interval(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.interval, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.interval, default=_NO_JSON),
                 bool,
             )
 
         @property
         def schedule(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.schedule, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.schedule, default=_NO_JSON),
                 bool,
             )
 
@@ -1463,15 +1556,15 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
             @property
             def ext(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.ext, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.ext, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def sub(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.sub, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.sub, default=_NO_JSON),
                     bool,
                 )
 
@@ -1494,8 +1587,8 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         @property
         def auto_dir(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.auto_dir, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.auto_dir, default=_NO_JSON),
                 bool,
             )
 
@@ -1505,15 +1598,16 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         @property
         def picture(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.picture, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.picture, default=_NO_JSON),
                 bool,
             )
 
         @property
         def test(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.test, default=None), bool
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.test, default=_NO_JSON),
+                bool,
             )
 
     class Record(providers.Value[_JSONDict], capabilities.Capabilities.Record):
@@ -1539,31 +1633,31 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         @property
         def extension_time_list(self):
-            return Capability(
+            return SimpleCapability(
                 self.lookup_factory(
-                    self.__get_value__, self.Keys.extension_time_list, default=None
+                    self.__get_value__, self.Keys.extension_time_list, default=_NO_JSON
                 ),
                 bool,
             )
 
         @property
         def overwrite(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.overwrite, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.overwrite, default=_NO_JSON),
                 bool,
             )
 
         @property
         def pack_duration(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.pack_duration, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.pack_duration, default=_NO_JSON),
                 bool,
             )
 
         @property
         def pre_record(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.pre_record, default=None),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.pre_record, default=_NO_JSON),
                 bool,
             )
 
@@ -1574,7 +1668,7 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
             """Audio"""
 
             class Alarm(
-                providers.Value[_JSONDict],
+                SimpleCapability[bool],
                 capabilities.Capabilities.Supports.Audio.Alarm,
             ):
                 """Alarm"""
@@ -1597,45 +1691,45 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
                 __slots__ = ()
 
-                _provided_value: JSON
-
-                @property
-                def _value(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.value, default=None),
-                        bool,
+                def _get_capability(self, create=False) -> Capability.JSON:
+                    return self.lookup_value(
+                        self.__get_value__, self.Keys.value, create, default=_NO_JSON
                     )
 
-                @property
-                def value(self):
-                    return self._value.value
+                def _get_permissions(self, create=False) -> int:
+                    return self.lookup_value(
+                        self._get_capability, Capability.Keys.permission, create, default=None
+                    )
 
-                @property
-                def permissions(self):
-                    return self._value.permissions
+                def _get_value(self, create=False) -> int:
+                    return self.lookup_value(
+                        self._get_capability, Capability.Keys.value, create, default=None
+                    )
 
-                def __bool__(self):
-                    return self.value
+                def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+                    super().__init__(value, bool)
 
                 @property
                 def enable(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.enable, default=None),
+                    return SimpleCapability(
+                        self.lookup_factory(self.__get_value__, self.Keys.enable, default=_NO_JSON),
                         bool,
                     )
 
                 @property
                 def schedule(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.schedule, default=None),
+                    return SimpleCapability(
+                        self.lookup_factory(
+                            self.__get_value__, self.Keys.schedule, default=_NO_JSON
+                        ),
                         bool,
                     )
 
                 @property
                 def task_enable(self):
-                    return Capability(
+                    return SimpleCapability(
                         self.lookup_factory(
-                            self.__get_value__, self.Keys.task_enable, default=None
+                            self.__get_value__, self.Keys.task_enable, default=_NO_JSON
                         ),
                         bool,
                     )
@@ -1656,13 +1750,13 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
             def alarm(self):
                 return self.Alarm(self.__get_value__)
 
-        class Buzzer(providers.Value[_JSONDict], capabilities.Capabilities.Supports.Buzzer):
+        class Buzzer(SimpleCapability[bool], capabilities.Capabilities.Supports.Buzzer):
             """Buzzer"""
 
             __slots__ = ()
 
             class Task(
-                providers.Value[_JSONDict],
+                SimpleCapability[bool],
                 capabilities.Capabilities.Supports.Buzzer.Task,
             ):
                 """Task"""
@@ -1681,30 +1775,28 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
                 __slots__ = ()
 
-                _provided_value: JSON
-
-                @property
-                def _value(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.value, default=None),
-                        bool,
+                def _get_capability(self, create=False) -> Capability.JSON:
+                    return self.lookup_value(
+                        self.__get_value__, self.Keys.value, create, default=_NO_JSON
                     )
 
-                @property
-                def value(self):
-                    return self._value.value
+                def _get_permissions(self, create=False) -> int:
+                    return self.lookup_value(
+                        self._get_capability, Capability.Keys.permission, create, default=None
+                    )
 
-                @property
-                def permissions(self):
-                    return self._value.permissions
+                def _get_value(self, create=False) -> int:
+                    return self.lookup_value(
+                        self._get_capability, Capability.Keys.value, create, default=None
+                    )
 
-                def __bool__(self):
-                    return self.value
+                def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+                    super().__init__(value, bool)
 
                 @property
                 def enable(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.enable, default=None),
+                    return SimpleCapability(
+                        self.lookup_factory(self.__get_value__, self.Keys.enable, default=_NO_JSON),
                         bool,
                     )
 
@@ -1721,25 +1813,27 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
             __slots__ = ()
 
-            @property
-            def _value(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.value, default=None), bool
+            def _get_capability(self, create=False) -> Capability.JSON:
+                return self.lookup_value(
+                    self.__get_value__, self.Keys.value, create, default=_NO_JSON
                 )
+
+            def _get_permissions(self, create=False) -> int:
+                return self.lookup_value(
+                    self._get_capability, Capability.Keys.permission, create, default=None
+                )
+
+            def _get_value(self, create=False) -> int:
+                return self.lookup_value(
+                    self._get_capability, Capability.Keys.value, create, default=None
+                )
+
+            def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+                super().__init__(value, bool)
 
             @property
             def task(self):
                 return self.Task(self.__get_value__)
-
-            @property
-            def value(self):
-                """value"""
-                return self._value.value
-
-            @property
-            def permissions(self):
-                """permissions"""
-                return self._value.permissions
 
         class Email(providers.Value[_JSONDict], capabilities.Capabilities.Supports.Email):
             """Email"""
@@ -1760,15 +1854,17 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
             @property
             def enable(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.enable, default=None),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.enable, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def task_enable(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.task_enable),
+                return SimpleCapability(
+                    self.lookup_factory(
+                        self.__get_value__, self.Keys.task_enable, default=_NO_JSON
+                    ),
                     bool,
                 )
 
@@ -1797,15 +1893,17 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
                 @property
                 def picture(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.picture),
+                    return SimpleCapability(
+                        self.lookup_factory(
+                            self.__get_value__, self.Keys.picture, default=_NO_JSON
+                        ),
                         bool,
                     )
 
                 @property
                 def video(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.video),
+                    return SimpleCapability(
+                        self.lookup_factory(self.__get_value__, self.Keys.video, default=_NO_JSON),
                         bool,
                     )
 
@@ -1833,27 +1931,31 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
                 @property
                 def capture_mode(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.capture_mode),
+                    return SimpleCapability(
+                        self.lookup_factory(
+                            self.__get_value__, self.Keys.capture_mode, default=_NO_JSON
+                        ),
                         bool,
                     )
 
                 @property
                 def custom_resolution(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.custom_resolution),
+                    return SimpleCapability(
+                        self.lookup_factory(
+                            self.__get_value__, self.Keys.custom_resolution, default=_NO_JSON
+                        ),
                         bool,
                     )
 
                 @property
                 def swap(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.swap),
+                    return SimpleCapability(
+                        self.lookup_factory(self.__get_value__, self.Keys.swap, default=_NO_JSON),
                         bool,
                     )
 
             class Task(
-                providers.Value[_JSONDict],
+                SimpleCapability[bool],
                 capabilities.Capabilities.Supports.FTP.Task,
             ):
                 """Task"""
@@ -1872,28 +1974,28 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
                 __slots__ = ()
 
-                @property
-                def _value(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.value),
-                        bool,
+                def _get_capability(self, create=False) -> Capability.JSON:
+                    return self.lookup_value(
+                        self.__get_value__, self.Keys.value, create, default=_NO_JSON
                     )
 
-                @property
-                def value(self):
-                    return self._value.value
+                def _get_permissions(self, create=False) -> int:
+                    return self.lookup_value(
+                        self._get_capability, Capability.Keys.permission, create, default=None
+                    )
 
-                @property
-                def permissions(self):
-                    return self._value.permissions
+                def _get_value(self, create=False) -> int:
+                    return self.lookup_value(
+                        self._get_capability, Capability.Keys.value, create, default=None
+                    )
 
-                def __bool__(self):
-                    return bool(self.value)
+                def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+                    super().__init__(value, bool)
 
                 @property
                 def enable(self):
-                    return Capability(
-                        self.lookup_factory(self.__get_value__, self.Keys.enable),
+                    return SimpleCapability(
+                        self.lookup_factory(self.__get_value__, self.Keys.enable, default=_NO_JSON),
                         bool,
                     )
 
@@ -1924,15 +2026,15 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
             @property
             def dir_YM(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.dir_YM),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.dir_YM, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def enable(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.enable),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.enable, default=_NO_JSON),
                     bool,
                 )
 
@@ -1946,15 +2048,17 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
             @property
             def video_swap(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.video_swap),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.video_swap, default=_NO_JSON),
                     bool,
                 )
 
             @property
             def ftps_encrypt(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.ftps_encrypt),
+                return SimpleCapability(
+                    self.lookup_factory(
+                        self.__get_value__, self.Keys.ftps_encrypt, default=_NO_JSON
+                    ),
                     bool,
                 )
 
@@ -1977,15 +2081,17 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
             @property
             def schedule_enable(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.schedule_enable),
+                return SimpleCapability(
+                    self.lookup_factory(
+                        self.__get_value__, self.Keys.schedule_enable, default=_NO_JSON
+                    ),
                     bool,
                 )
 
             @property
             def enable(self):
-                return Capability(
-                    self.lookup_factory(self.__get_value__, self.Keys.enable),
+                return SimpleCapability(
+                    self.lookup_factory(self.__get_value__, self.Keys.enable, default=_NO_JSON),
                     bool,
                 )
 
@@ -2035,29 +2141,29 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         @property
         def http_enable(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.http_enable),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.http_enable, default=_NO_JSON),
                 bool,
             )
 
         @property
         def https_enable(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.https_enable),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.https_enable, default=_NO_JSON),
                 bool,
             )
 
         @property
         def onvif_enable(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.onvif_enable),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.onvif_enable, default=_NO_JSON),
                 bool,
             )
 
         @property
         def push_interval(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.push_interval),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.push_interval, default=_NO_JSON),
                 bool,
             )
 
@@ -2067,19 +2173,19 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         @property
         def rtmp_enable(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.rtmp_enable),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.rtmp_enable, default=_NO_JSON),
                 bool,
             )
 
         @property
         def rtsp_enable(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.rtsp_enable),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.rtsp_enable, default=_NO_JSON),
                 bool,
             )
 
-    class Wifi(providers.Value[_JSONDict], capabilities.Capabilities.Wifi):
+    class Wifi(SimpleCapability[bool], capabilities.Capabilities.Wifi):
         """WIFI"""
 
         class JSON(TypedDict):
@@ -2096,27 +2202,26 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
         __slots__ = ()
 
-        @property
-        def _value(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.value, default=None), bool
+        def _get_capability(self, create=False) -> Capability.JSON:
+            return self.lookup_value(self.__get_value__, self.Keys.value, create, default=_NO_JSON)
+
+        def _get_permissions(self, create=False) -> int:
+            return self.lookup_value(
+                self._get_capability, Capability.Keys.permission, create, default=None
             )
 
-        @property
-        def value(self):
-            return self._value.value
+        def _get_value(self, create=False) -> int:
+            return self.lookup_value(
+                self._get_capability, Capability.Keys.value, create, default=None
+            )
 
-        @property
-        def permissions(self):
-            return self._value.permissions
-
-        def __bool__(self):
-            return bool(self.value)
+        def __init__(self, value: providers.FactoryValue[_JSONDict] | _JSONDict | None):
+            super().__init__(value, bool)
 
         @property
         def testable(self):
-            return Capability(
-                self.lookup_factory(self.__get_value__, self.Keys.testable),
+            return SimpleCapability(
+                self.lookup_factory(self.__get_value__, self.Keys.testable, default=_NO_JSON),
                 bool,
             )
 
@@ -2129,6 +2234,7 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
         auth: Capability.JSON
         autoMaint: Capability.JSON
         cloudStorage: Capability.JSON
+        customAudio: Capability.JSON
         dateFormat: Capability.JSON
         ddns: Capability.JSON
         disableAutoFocus: Capability.JSON
@@ -2183,6 +2289,7 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
         auth: Final = "auth"
         auto_maintenance: Final = "autoMaint"
         cloud_storage: Final = "cloudStorage"
+        custom_audio: Final = "customAudio"
         date_format: Final = "dateFormat"
         ddns: Final = "ddns"
         disable_autofocus: Final = "disableAutoFocus"
@@ -2227,14 +2334,17 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
     @property
     def three_g(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.three_g, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.three_g, default=_NO_JSON),
+            bool,
         )
 
     @property
     def channels(self):
         """channels"""
-        return _Channels(self.lookup_factory(self.__get_value__, self.Keys.channels))
+        return _Channels(
+            self.lookup_factory(self.__get_value__, self.Keys.channels, default=_NO_JSON)
+        )
 
     @property
     def alarm(self):
@@ -2242,41 +2352,44 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
     @property
     def auth(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.auth, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.auth, default=_NO_JSON),
+            bool,
         )
 
     @property
     def auto_maintenance(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.auto_maintenance),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.auto_maintenance, default=_NO_JSON),
             bool,
         )
 
     @property
     def cloud_storage(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.cloud_storage),
-            _CloudStorage,
+        return FlagCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.cloud_storage, default=_NO_JSON),
+            _CLOUDSTORAGE,
         )
 
     @property
     def custom_audio(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.custom_audio),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.custom_audio, default=_NO_JSON),
             bool,
         )
 
     @property
     def date_format(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.date_format),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.date_format, default=_NO_JSON),
             bool,
         )
 
     @property
     def ddns(self):
-        return Capability(self.lookup_factory(self.__get_value__, self.Keys.ddns), _DDns)
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.ddns, default=_NO_JSON), _DDNS
+        )
 
     @property
     def device(self):
@@ -2284,21 +2397,23 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
     @property
     def disable_autofocus(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.disable_autofocus),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.disable_autofocus, default=_NO_JSON),
             bool,
         )
 
     @property
     def disk(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.disk, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.disk, default=_NO_JSON),
+            bool,
         )
 
     @property
     def display(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.display, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.display, default=_NO_JSON),
+            bool,
         )
 
     @property
@@ -2307,15 +2422,15 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
     @property
     def config_import(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.config_import),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.config_import, default=_NO_JSON),
             bool,
         )
 
     @property
     def config_export(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.config_export),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.config_export, default=_NO_JSON),
             bool,
         )
 
@@ -2327,33 +2442,36 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
     def hour_format(self):
         """change hour format supported"""
 
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.hour_format),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.hour_format, default=_NO_JSON),
             bool,
         )
 
     @property
     def http(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.http, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.http, default=_NO_JSON),
+            bool,
         )
 
     @property
     def http_flv(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.http_flv, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.http_flv, default=_NO_JSON),
+            bool,
         )
 
     @property
     def https(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.https, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.https, default=_NO_JSON),
+            bool,
         )
 
     @property
     def ipc_manager(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.ipc_manager),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.ipc_manager, default=_NO_JSON),
             bool,
         )
 
@@ -2361,82 +2479,93 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
     def led_control(self):
         ledControl: Capability.JSON
         led_control: Final = "ledControl"
-        return Capability(self.lookup_factory(self.__get_value__, led_control, default=None), bool)
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, led_control, default=_NO_JSON),
+            bool,
+        )
 
     @property
     def local_link(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.local_link),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.local_link, default=_NO_JSON),
             bool,
         )
 
     @property
     def log(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.log, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.log, default=_NO_JSON),
+            bool,
         )
 
     @property
     def media_port(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.media_port),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.media_port, default=_NO_JSON),
             bool,
         )
 
     @property
     def ntp(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.ntp, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.ntp, default=_NO_JSON),
+            bool,
         )
 
     @property
     def online(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.online, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.online, default=_NO_JSON),
+            bool,
         )
 
     @property
     def onvif(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.onvif, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.onvif, default=_NO_JSON),
+            bool,
         )
 
     @property
     def p2p(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.p2p, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.p2p, default=_NO_JSON),
+            bool,
         )
 
     @property
     def performance(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.performance),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.performance, default=_NO_JSON),
             bool,
         )
 
     @property
     def pppoe(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.pppoe, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.pppoe, default=_NO_JSON),
+            bool,
         )
 
     @property
     def push(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.push, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.push, default=_NO_JSON),
+            bool,
         )
 
     @property
     def push_schedule(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.push_schedule),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.push_schedule, default=_NO_JSON),
             bool,
         )
 
     @property
     def reboot(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.reboot, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.reboot, default=_NO_JSON),
+            bool,
         )
 
     @property
@@ -2445,46 +2574,50 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
     @property
     def restore(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.restore, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.restore, default=_NO_JSON),
+            bool,
         )
 
     @property
     def rtmp(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.rtmp, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.rtmp, default=_NO_JSON),
+            bool,
         )
 
     @property
     def rtsp(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.rtsp, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.rtsp, default=_NO_JSON),
+            bool,
         )
 
     @property
     def schedule_version(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.schedule_version),
-            _ScheduleVersion,
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.schedule_version, default=_NO_JSON),
+            _SCHEDULE_VERSION,
         )
 
     @property
     def sd_card(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.sd_card, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.sd_card, default=_NO_JSON),
+            bool,
         )
 
     @property
     def show_qr_code(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.show_qr_code),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.show_qr_code, default=_NO_JSON),
             bool,
         )
 
     @property
     def sim_module(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.sim_module),
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.sim_module, default=_NO_JSON),
             bool,
         )
 
@@ -2494,46 +2627,50 @@ class Capabilities(providers.Value[_JSONDict], capabilities.Capabilities):
 
     @property
     def talk(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.talk, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.talk, default=_NO_JSON),
+            bool,
         )
 
     @property
     def time(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.time, default=None), _Time
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.time, default=_NO_JSON), _TIME
         )
 
     @property
     def tv_system(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.tv_system, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.tv_system, default=_NO_JSON),
+            bool,
         )
 
     @property
     def upgrade(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.upgrade, default=None),
-            _Upgrade,
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.upgrade, default=_NO_JSON),
+            _UPGRADE,
         )
 
     @property
     def upnp(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.upnp, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.upnp, default=_NO_JSON),
+            bool,
         )
 
     @property
     def user(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.user, default=None), bool
+        return SimpleCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.user, default=_NO_JSON),
+            bool,
         )
 
     @property
     def video_clip(self):
-        return Capability(
-            self.lookup_factory(self.__get_value__, self.Keys.video_clip),
-            _VideoClip,
+        return EnumCapability(
+            self.lookup_factory(self.__get_value__, self.Keys.video_clip, default=_NO_JSON),
+            _VIDEO_CLIP,
         )
 
     @property
@@ -2548,4 +2685,4 @@ class UpdatableCapabilities(Capabilities):
         """Update underlying values"""
         if not isinstance(value, Capabilities):
             raise ValueError("Must provide a Capabilities object")
-        self.__get_value__ = self.create_factory(value.__get_value__())
+        self.__set_value__(value.__get_value__())

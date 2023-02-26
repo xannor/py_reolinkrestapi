@@ -5,11 +5,10 @@ from typing import (
     Generic,
     Protocol,
     TypeAlias,
-    TypeVar,
     TypedDict,
     overload,
 )
-from typing_extensions import LiteralString, Unpack
+from typing_extensions import LiteralString, Unpack, TypeVar
 
 
 from async_reolink.api import model, typing
@@ -389,7 +388,7 @@ class MutableDateTime(DateTime):
         MutableTime.update(self, value)
 
 
-T = TypeVar("T")
+T = TypeVar("T", default=int)
 
 
 class MinMaxRange(providers.Value[_JSONDict], Generic[T]):
@@ -407,36 +406,28 @@ class MinMaxRange(providers.Value[_JSONDict], Generic[T]):
         min: Final = "min"
         max: Final = "max"
 
-    __slots__ = ()
+    __slots__ = ("_mangle_key",)
 
     __get_value__: providers.FactoryValue[JSON]
-
-    @overload
-    def __init__(
-        self: "MinMaxRange[int]",
-        value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
-        /,
-        **kwargs: Unpack["MinMaxRange.KwArgs"],
-    ) -> None:
-        ...
 
     def __init__(
         self,
         value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
         /,
-        **kwargs: Unpack["MinMaxRange.KwArgs"],
+        **kwargs: Unpack[mangle.mangler_kwargs],
     ) -> None:
-        super().__init__(value, **kwargs)
+        super().__init__(value, **{k: kwargs[k] for k in kwargs if k not in mangle.mangler_kwkeys})
+        self._mangle_key = mangle.mangler(**kwargs)
 
     @property
     def min(self) -> T:
         if value := self.__get_value__():
-            return value.get(self.Keys.min)
+            return value.get(self._mangle_key(self.Keys.min))
 
     @property
     def max(self) -> T:
         if value := self.__get_value__():
-            return value.get(self.Keys.max)
+            return value.get(self._mangle_key(self.Keys.max))
 
 
 class StringRange(providers.Value[_JSONDict]):
@@ -459,12 +450,14 @@ class StringRange(providers.Value[_JSONDict]):
     def __init__(
         self,
         value: providers.FactoryValue[_JSONDict] | _JSONDict | None = ...,
+        /,
         prefix: str | None = None,
         suffix: str | None = None,
+        **kwargs: any,
     ) -> None:
-        super().__init__(value)
+        super().__init__(value, **kwargs)
         self.__prefix = prefix
-        self.__suffix = suffix
+        self.__suffix = suffix or ""
 
     __get_value__: providers.FactoryValue[JSON]
 
